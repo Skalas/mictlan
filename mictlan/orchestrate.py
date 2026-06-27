@@ -29,7 +29,6 @@ from dataclasses import asdict
 from datetime import date
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import mictlan.analyzer as analyzer  # noqa: E402
 from mictlan.analyzer import (  # noqa: E402

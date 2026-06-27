@@ -21,7 +21,6 @@ import time
 from datetime import date, datetime
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
 from mictlan.analyzer import list_existing_aliases, list_existing_slugs
 from mictlan.stagers.claude_web import parse_conversation, pre_grep_entities
 
@@ -180,7 +179,9 @@ def list_conversations(client: WebClient, org_id: str, since: str | None = None,
             updated = c.get("updated_at") or c.get("created_at") or ""
             if cutoff and updated:
                 try:
-                    if datetime.fromisoformat(updated.replace("Z", "+00:00")) < cutoff.replace(tzinfo=None if cutoff.tzinfo is None else cutoff.tzinfo):
+                    # API timestamps are tz-aware; the cutoff is naive — strip tz to compare.
+                    updated_dt = datetime.fromisoformat(updated.replace("Z", "+00:00")).replace(tzinfo=None)
+                    if updated_dt < cutoff:
                         return conversations
                 except (ValueError, TypeError):
                     pass

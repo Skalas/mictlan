@@ -23,7 +23,6 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
 from mictlan.analyzer import list_existing_aliases, list_existing_slugs
 from mictlan.stagers.claude_code import classify_mode, count_actions, pre_grep_entities
 
@@ -210,7 +209,7 @@ def main() -> int:
     aliases = list_existing_aliases()
     slugs = list_existing_slugs()
 
-    import ledger as _ledger
+    import mictlan.ledger as _ledger
     ledger_keys: set[str] = _ledger.ledger_keys(VAULT)
 
     def _ledger_short(source_id: str) -> str:

@@ -23,7 +23,6 @@ import sys
 from datetime import date, datetime
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
 from mictlan.analyzer import list_existing_aliases, list_existing_slugs
 
 PROJECTS_ROOT = Path.home() / ".claude" / "projects"
@@ -243,7 +242,7 @@ def main() -> int:
     # Load the ledger so we can skip sessions already processed/archived.
     # Without this, we re-stage every session in the window each run — defeats
     # the post-apply unlink in orchestrate_digest. Union of legacy file + shards.
-    import ledger as _ledger
+    import mictlan.ledger as _ledger
     ledger_keys: set[str] = _ledger.ledger_keys(VAULT)
 
     def _ledger_short(source_id: str) -> str:

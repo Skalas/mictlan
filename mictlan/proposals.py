@@ -54,7 +54,6 @@ def _exact_slug_match(node: NodeProposal, existing_slugs: set[str]) -> Optional[
     candidates = {
         node.slug,
         node.slug.replace("-", ""),
-        f"{node.slug}-cafe",  # known restaurant alias pattern in the vault
     }
     for c in candidates:
         if c in existing_slugs:

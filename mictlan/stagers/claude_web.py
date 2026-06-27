@@ -22,7 +22,6 @@ import sys
 from datetime import date
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
 from mictlan.analyzer import list_existing_aliases, list_existing_slugs
 
 from mictlan.paths import VAULT

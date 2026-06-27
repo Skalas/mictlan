@@ -532,6 +532,9 @@ def parse_proposal(payload: dict, source: str, source_id: str) -> GraphUpdate:
         body = c.get("body") or ""
         if not slug:
             raise ValueError(f"creates[{i}] missing slug")
+        # folder comes from LLM output — allowlist it so it can't escape the vault.
+        if folder not in ("notes", "meetings", "daily", "conversations"):
+            raise ValueError(f"creates[{i}] invalid folder: {folder!r}")
         if not isinstance(fm, dict):
             raise ValueError(f"creates[{i}].frontmatter must be an object")
         creates.append(NewNote(slug=slug, folder=folder, frontmatter=fm, body=body))

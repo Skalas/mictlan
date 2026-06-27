@@ -7,10 +7,12 @@ from datetime import datetime, timedelta
 import httpx
 
 # Configuration
+from mictlan.paths import VAULT as _VAULT  # single shared vault resolver (MICTLAN_VAULT)
+
 DB_PATH = os.path.expanduser("~/.hermes/state.db")
-VAULT_PATH = os.path.expanduser("~/Documents/Obsidian Vault")
-DAILY_DIR = os.path.join(VAULT_PATH, "daily")
-NOTES_DIR = os.path.join(VAULT_PATH, "notes")
+VAULT_PATH = str(_VAULT)
+DAILY_DIR = str(_VAULT / "daily")
+NOTES_DIR = str(_VAULT / "notes")
 AUDIT_LOG_PATH = os.path.expanduser("~/.hermes/logs/dream_audit.json")
 
 # Single model for the whole agent fleet (Hermes + OpenClaw share one key, one model).
@@ -85,7 +87,9 @@ def call_gemini(prompt):
     try:
         text = resp_data["candidates"][0]["content"]["parts"][0]["text"].strip()
     except (KeyError, IndexError) as e:
-        raise ValueError(f"Unexpected response structure from Gemini API: {resp_data}") from e
+        # Bounded summary only — never dump the raw response into the audit log.
+        shape = list(resp_data.keys()) if isinstance(resp_data, dict) else type(resp_data).__name__
+        raise ValueError(f"Unexpected Gemini response (status={r.status_code}, keys={shape})") from e
 
     # Defensive: strip markdown fences if the model wraps the JSON anyway.
     if text.startswith("```json"):
@@ -419,8 +423,16 @@ def apply_deep_promotions(target_date, insights):
                     break
                     
         if target_path:
+            # Containment guardrail (REFUSE): the target note name comes from the
+            # LLM; never let it escape the vault via `../` or symlinks.
+            real_target = os.path.realpath(target_path)
+            vault_real = os.path.realpath(VAULT_PATH)
+            if not (real_target == vault_real or real_target.startswith(vault_real + os.sep)):
+                print(f"🚫 REFUSE: Target {real_target} escapes the vault. Action blocked.")
+                continue
+
             # Check protected paths guardrail (REFUSE)
-            rel_path = os.path.relpath(target_path, VAULT_PATH)
+            rel_path = os.path.relpath(real_target, vault_real)
             if any(rel_path.startswith(p) for p in protected_paths):
                 print(f"🚫 REFUSE: Target path {rel_path} resides inside a protected directory. Action blocked.")
                 continue
@@ -507,8 +519,12 @@ def run_dream_cycle(target_date=None):
     except Exception as e:
         print(f"❌ Error during dreaming cycle: {e}", file=sys.stderr)
         log_audit(target_date, f"failed: {str(e)}")
+        raise  # surface non-zero exit so launchd / cron alerting fires
 
 if __name__ == "__main__":
-    # If a date argument is passed, use it, otherwise run for today
+    # If a date argument is passed, use it, otherwise run for yesterday (default).
     target = sys.argv[1] if len(sys.argv) > 1 else None
-    run_dream_cycle(target)
+    try:
+        run_dream_cycle(target)
+    except Exception:
+        sys.exit(1)
