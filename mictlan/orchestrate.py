@@ -31,8 +31,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-import analyzer  # noqa: E402
-from analyzer import (  # noqa: E402
+import mictlan.analyzer as analyzer  # noqa: E402
+from mictlan.analyzer import (  # noqa: E402
     ConversationUnit,
     Turn,
     apply,
@@ -40,11 +40,11 @@ from analyzer import (  # noqa: E402
     build_vault_context,
     parse_proposal,
 )
-import lint_proposals  # noqa: E402
-import ledger as _ledger  # noqa: E402  (sharded dedup ledger)
+import mictlan.lint as lint_proposals  # noqa: E402
+import mictlan.ledger as _ledger  # noqa: E402  (sharded dedup ledger)
 
 
-VAULT_DEFAULT = Path(__file__).resolve().parents[2]
+from mictlan.paths import VAULT as VAULT_DEFAULT
 
 
 def _bind_analyzer_to_vault(vault: Path) -> None:

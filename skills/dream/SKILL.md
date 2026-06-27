@@ -98,9 +98,9 @@ Default lookback window:
 
 ```bash
 SINCE=$(date -v-7d +%Y-%m-%d)
-uv run --with pyyaml _system/scripts/stage_claude_code.py --since "$SINCE" --limit 200
-uv run --with pyyaml --with playwright --with httpx _system/scripts/fetch_claude_web.py --since "$SINCE" --limit 200
-uv run --with pyyaml _system/scripts/stage_cursor.py --since "$SINCE" --limit 200
+uv run --project ~/github/skalas/mictlan python -m mictlan.stagers.claude_code --since "$SINCE" --limit 200
+uv run --project ~/github/skalas/mictlan --with playwright python -m mictlan.stagers.fetch_claude_web --since "$SINCE" --limit 200
+uv run --project ~/github/skalas/mictlan python -m mictlan.stagers.cursor --since "$SINCE" --limit 200
 ```
 
 Cursor sessions (`~/.cursor/projects/*/agent-transcripts/`) stage into `staging/cursor-code/` with source `cursor-jsonl`. Same downstream pipeline as Claude Code — pure parsing, no LLM calls or vault writes. The stager is idempotent against the same `processed.json` ledger.
@@ -118,7 +118,7 @@ Capture the counts of newly-staged items per source (code, web, cursor). If all 
 Claude Code spawns subagent sessions via the Task tool. Their JSONL files land in staging with `agent-*` filenames, but **their synthesis already lives in the parent conversation** — digesting them as standalone H2 entries adds noise. Mark them as archived in the ledger so the digest pipeline skips them.
 
 ```bash
-uv run --with pyyaml _system/scripts/archive_subagent_jsonl.py --confirm
+uv run --project ~/github/skalas/mictlan python -m mictlan.stagers.archive_subagent_jsonl --confirm
 ```
 
 This is idempotent (only NEW `agent-*` files get added to the ledger). Capture the count of newly-archived entries; report it in the dream journal under `Skipped (ephemeral)` → `subagent transcripts: <N>`.
@@ -130,7 +130,7 @@ After this step, `orchestrate_digest.py status` should report the **real** pendi
 ## Step 2: Triage
 
 ```bash
-uv run --with pyyaml _system/scripts/triage_conversations.py
+uv run --project ~/github/skalas/mictlan python -m mictlan.triage
 ```
 
 This classifies staged conversations into `durable`, `ephemeral`, and `uncertain`. Capture the lists; you'll need them for Steps 3 and 7.
@@ -140,7 +140,7 @@ This classifies staged conversations into `durable`, `ephemeral`, and `uncertain
 For every `durable` conversation, run the existing digest preparation step but **with no batch-size cap** — we want all of tonight's durable content proposed in parallel:
 
 ```bash
-uv run --with pyyaml _system/scripts/orchestrate_digest.py prepare --limit 999
+uv run --project ~/github/skalas/mictlan python -m mictlan.orchestrate prepare --limit 999
 cat _system/ingestion/proposed/_manifest.json
 ```
 
@@ -170,7 +170,7 @@ Dry-run first:
 
 ```bash
 SAFE="claude-jsonl:<safe1>,claude-jsonl:<safe2>"  # comma-separated, no spaces
-uv run --with pyyaml _system/scripts/orchestrate_digest.py apply --only "$SAFE"
+uv run --project ~/github/skalas/mictlan python -m mictlan.orchestrate apply --only "$SAFE"
 ```
 
 Inspect the `[dry] …` output. If anything looks wrong (unexpected creates, missing appends), in interactive mode pause; in headless mode abort and write the dry-run output verbatim into the dream journal under `errors`. Do not retry blindly.
@@ -178,7 +178,7 @@ Inspect the `[dry] …` output. If anything looks wrong (unexpected creates, mis
 If the dry-run looks correct:
 
 ```bash
-uv run --with pyyaml _system/scripts/orchestrate_digest.py apply --only "$SAFE" --confirm
+uv run --project ~/github/skalas/mictlan python -m mictlan.orchestrate apply --only "$SAFE" --confirm
 ```
 
 This mutates `notes/`, updates `_system/ingestion/processed.json`, and runs reindex. Applied keys self-clean (their `.json`/`.prompt.md`/staging files are removed and they drop out of the manifest); the risky keys remain for the journal record and morning review.
@@ -230,7 +230,7 @@ all journal history, not just tonight's — so you approve it all in one place.
 
 1. Aggregate every pending proposal (drops anything already covered by a real note):
    ```bash
-   uv run _system/scripts/pending_proposals.py
+   uv run --project ~/github/skalas/mictlan python -m mictlan.pending
    ```
    This walks all `dreams/*.md`, harvests candidate slugs from `Held for review`
    + `Proposed new note stubs`, and removes any that now resolve to a note
@@ -250,7 +250,7 @@ all journal history, not just tonight's — so you approve it all in one place.
    - **fold** → append a dated H2 section to the chosen existing note, bump `updated:`.
    - **reject** / **defer** → no write; record the disposition in the journal.
 
-4. After any writes, run `_system/scripts/reindex.sh` once (Step 8 can be skipped
+4. After any writes, run `uv run --project ~/github/skalas/mictlan python -m mictlan.reindex` once (Step 8 can be skipped
    if this already ran it).
 
 5. Once the other agents' shims land on the Mac Mini, their proposal surfaces
@@ -324,7 +324,7 @@ Spanish/English: match the language of the source content where it makes sense. 
 The `apply --confirm` in Step 4 already ran reindex, but if Step 5 or Step 6 touched files (status flips, journal write), run it again to keep MOCs current:
 
 ```bash
-_system/scripts/reindex.sh
+uv run --project ~/github/skalas/mictlan python -m mictlan.reindex
 ```
 
 ## Step 9: Commit (interactive only — never headless)

@@ -16,14 +16,14 @@ CLI (for shell agents / debugging):
     python3 -m mictlan.policy            # prints the policy as JSON, exit 0
     python3 -m mictlan.policy --check    # validates, prints status, exit 0/1
 
-NOTE (cutover TODO): VAULT below is resolved relative to the OLD vault layout
-(`_system/scripts/<file>`). In the repo the path differs — wire VAULT from an
-env var or brain-MCP before deleting the vault copy. See the enhancement issue.
+The vault location is resolved from the MICTLAN_VAULT env var, falling back to
+the conventional iCloud path (present on both the laptop and the Mac Mini).
 """
 from __future__ import annotations
 
 import datetime as _dt
 import json
+import os
 import pathlib
 import sys
 
@@ -33,9 +33,8 @@ except ModuleNotFoundError:  # uv run --with pyyaml
     print("mictlan.policy: pyyaml required (uv run --with pyyaml ...)", file=sys.stderr)
     raise
 
-# Resolve the vault relative to this script: _system/scripts/ -> vault root.
-VAULT = pathlib.Path(__file__).resolve().parents[2]
-POLICY_PATH = VAULT / "_system" / "dream-policy.md"
+# Vault + policy location come from the single shared resolver.
+from mictlan.paths import VAULT, POLICY_PATH  # noqa: E402
 
 
 class PolicyUnavailable(Exception):

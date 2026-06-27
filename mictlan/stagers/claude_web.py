@@ -23,9 +23,9 @@ from datetime import date
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from analyzer import list_existing_aliases, list_existing_slugs
+from mictlan.analyzer import list_existing_aliases, list_existing_slugs
 
-VAULT = Path(__file__).resolve().parents[2]
+from mictlan.paths import VAULT
 STAGING = VAULT / "_system" / "ingestion" / "staging" / "claude-web"
 
 MIN_TURNS = 4

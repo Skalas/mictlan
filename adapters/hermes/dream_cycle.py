@@ -17,17 +17,10 @@ AUDIT_LOG_PATH = os.path.expanduser("~/.hermes/logs/dream_audit.json")
 GEMINI_MODEL = "gemini-3.5-flash"
 GEMINI_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 
-# Shared policy path resolution inside the Vault
-SCRIPTS_DIR = os.path.join(VAULT_PATH, "_system", "scripts")
-if SCRIPTS_DIR not in sys.path:
-    sys.path.append(SCRIPTS_DIR)
-
 # --- 0. Policy Loading Gate (FAIL CLOSED) ---
-# copy-first: still imports the vault's live loader module (dreamcore_policy).
-# Cutover TODO: switch to `from mictlan.policy import ...` once the package is
-# installed on the Mac Mini. See the enhancement issue.
+# Policy loader comes from the shared engine (requires `mictlan` installed here).
 try:
-    from dreamcore_policy import load_policy, sign, PolicyUnavailable
+    from mictlan.policy import load_policy, sign, PolicyUnavailable
     policy = load_policy()
     policy_version = policy.version
     heading_signature = policy._d["heading_signature"]

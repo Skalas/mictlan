@@ -14,7 +14,7 @@ from pathlib import Path
 import yaml
 from jsonschema import Draft7Validator
 
-VAULT = Path(__file__).resolve().parents[2]
+from mictlan.paths import VAULT
 SCHEMA = VAULT / "_system" / "schemas" / "frontmatter.json"
 FRONTMATTER_RE = re.compile(r"^---\n(.*?)\n---\n", re.DOTALL)
 

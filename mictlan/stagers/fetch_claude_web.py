@@ -22,10 +22,10 @@ from datetime import date, datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from analyzer import list_existing_aliases, list_existing_slugs
-from stage_claude_web import parse_conversation, pre_grep_entities
+from mictlan.analyzer import list_existing_aliases, list_existing_slugs
+from mictlan.stagers.claude_web import parse_conversation, pre_grep_entities
 
-VAULT = Path(__file__).resolve().parents[2]
+from mictlan.paths import VAULT
 STAGING = VAULT / "_system" / "ingestion" / "staging" / "claude-web"
 COOKIE_PATH = VAULT / "_system" / "ingestion" / ".claude-web-cookies.json"
 BROWSER_DATA = VAULT / "_system" / "ingestion" / ".claude-web-browser"

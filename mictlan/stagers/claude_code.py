@@ -24,10 +24,10 @@ from datetime import date, datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from analyzer import list_existing_aliases, list_existing_slugs
+from mictlan.analyzer import list_existing_aliases, list_existing_slugs
 
 PROJECTS_ROOT = Path.home() / ".claude" / "projects"
-VAULT = Path(__file__).resolve().parents[2]
+from mictlan.paths import VAULT
 STAGING = VAULT / "_system" / "ingestion" / "staging" / "claude-code"
 
 # Patterns to strip from user text (slash-command output, system reminders)

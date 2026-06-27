@@ -33,7 +33,7 @@ except ImportError:
     sys.exit(1)
 
 
-VAULT = Path(__file__).resolve().parents[2]
+from mictlan.paths import VAULT
 CONVERSATIONS = VAULT / "conversations"
 NOTES = VAULT / "notes"
 INGESTION = VAULT / "_system" / "ingestion"

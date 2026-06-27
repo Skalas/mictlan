@@ -20,7 +20,7 @@ import os
 import re
 import sys
 
-VAULT = os.environ.get("VAULT_PATH", os.getcwd())
+from mictlan.paths import VAULT
 NOTES_DIR = os.path.join(VAULT, "notes")
 DREAMS_DIR = os.path.join(VAULT, "dreams")
 

@@ -24,11 +24,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from analyzer import list_existing_aliases, list_existing_slugs
-from stage_claude_code import classify_mode, count_actions, pre_grep_entities
+from mictlan.analyzer import list_existing_aliases, list_existing_slugs
+from mictlan.stagers.claude_code import classify_mode, count_actions, pre_grep_entities
 
 PROJECTS_ROOT = Path.home() / ".cursor" / "projects"
-VAULT = Path(__file__).resolve().parents[2]
+from mictlan.paths import VAULT
 STAGING = VAULT / "_system" / "ingestion" / "staging" / "cursor-code"
 
 USER_QUERY_RE = re.compile(r"<user_query>\s*(.*?)\s*</user_query>", re.DOTALL)

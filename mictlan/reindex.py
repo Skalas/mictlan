@@ -13,7 +13,7 @@ from pathlib import Path
 
 import yaml
 
-VAULT = Path(__file__).resolve().parents[2]
+from mictlan.paths import VAULT
 INDEX = VAULT / "_index"
 WIKILINK_RE = re.compile(r"\[\[([^\]|#]+?)(?:\|[^\]]+)?\]\]")
 FRONTMATTER_RE = re.compile(r"^---\n(.*?)\n---\n(.*)$", re.DOTALL)

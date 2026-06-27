@@ -24,7 +24,7 @@ from pathlib import Path
 
 import yaml
 
-VAULT = Path(__file__).resolve().parents[2]
+from mictlan.paths import VAULT
 NOTES = VAULT / "notes"
 CONVERSATIONS = VAULT / "conversations"
 STATE_PATH = VAULT / "_system" / "ingestion" / "state.json"

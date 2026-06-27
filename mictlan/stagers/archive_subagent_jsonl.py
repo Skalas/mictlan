@@ -26,10 +26,10 @@ from datetime import date
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import orchestrate_digest as od  # noqa: E402
+import mictlan.orchestrate as od  # noqa: E402
 
 
-VAULT_DEFAULT = Path(__file__).resolve().parents[2]
+from mictlan.paths import VAULT as VAULT_DEFAULT
 REASON = "subagent invocation — synthesis lives in parent conversation"
 
 

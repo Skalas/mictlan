@@ -34,7 +34,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-VAULT_DEFAULT = Path(__file__).resolve().parents[2]
+from mictlan.paths import VAULT as VAULT_DEFAULT
 
 WIKILINK_RE = re.compile(r"\[\[([^\]\|#]+)(?:\|[^\]]+)?(?:#[^\]]+)?\]\]")
 SOURCE_HASH_RE = re.compile(r"<!--\s*src:([a-z0-9-]+):([a-z0-9]+)\s*-->")
