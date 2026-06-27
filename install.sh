@@ -19,4 +19,5 @@ mkdir -p "$CLAUDE_CMDS"
 ln -sf "${ROOT}/skills/dream/SKILL.md" "${CLAUDE_CMDS}/dream.md"
 echo "==> linked /dream -> ${ROOT}/skills/dream/SKILL.md"
 
-echo "==> done. Engine in ${ROOT}/mictlan. Run 'make deploy-mini' for the Mac Mini."
+echo "==> Claude Code ready — type /dream."
+echo "    Mac Mini harnesses: run 'make install-hermes' / 'make install-openclaw' on the mini."

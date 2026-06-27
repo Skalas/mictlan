@@ -68,12 +68,58 @@ by brain-MCP and read at every run:
 
 Edit the file, bump its version → every agent inherits it on its next run.
 
-## Install / deploy
+## Installation
+
+Prereqs: [`uv`](https://docs.astral.sh/uv/) and `git`. Set `MICTLAN_VAULT` if your
+vault isn't at `~/Documents/Obsidian Vault`.
+
+### One line (humans)
 
 ```bash
-make install          # symlink the /dream skill into ~/.claude, install engine (uv)
-make deploy-mini      # rsync engine + hermes/openclaw adapters to the Mac Mini
-make test             # pytest
+git clone git@github.com:Skalas/mictlan.git ~/github/skalas/mictlan && ~/github/skalas/mictlan/install.sh
+```
+
+Installs the engine (`uv sync`) and links the `/dream` skill into Claude Code. Then type `/dream`.
+
+### Per agent harness
+
+Each harness installs the same engine; only the entry point differs.
+
+**Claude Code** (laptop) — engine + the `/dream` skill:
+
+```bash
+cd ~/github/skalas/mictlan && make install
+```
+
+Symlinks `~/.claude/commands/dream.md` → the repo (repo stays the source of truth). The skill's steps call the engine as `uv run --project ~/github/skalas/mictlan python -m mictlan.*`.
+
+**Hermes** (Mac Mini) — its `dream_cycle.py` imports `mictlan`, so the package must be installed on the mini:
+
+```bash
+# on the Mac Mini, first time:
+git clone git@github.com:Skalas/mictlan.git ~/github/skalas/mictlan
+cd ~/github/skalas/mictlan && make install-hermes
+```
+
+Runs `uv sync` and symlinks `~/.hermes/scripts/dream_cycle.py` → the repo adapter. The nightly runner must invoke it through the project env:
+
+```bash
+uv run --project ~/github/skalas/mictlan python ~/.hermes/scripts/dream_cycle.py [YYYY-MM-DD]
+```
+
+**OpenClaw / Nico** (Mac Mini) — dreaming is a compiled bundle, so there is **no package to install**; mictlan owns only the config:
+
+```bash
+cd ~/github/skalas/mictlan && make install-openclaw   # prints the config to verify
+```
+
+Ensure `~/.openclaw/openclaw.json` has `model.primary = google/gemini-3.5-flash` and no dreaming-specific model override (fallbacks apply only on failure).
+
+### Updating the mini from the laptop
+
+```bash
+make deploy-mini      # ssh the mini → git pull → make install-hermes
+make test             # uv run --extra dev pytest
 ```
 
 ## Status
