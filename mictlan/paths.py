@@ -15,6 +15,11 @@ import pathlib
 DEFAULT_VAULT = os.path.expanduser("~/Documents/Obsidian Vault")
 VAULT = pathlib.Path(os.environ.get("MICTLAN_VAULT", DEFAULT_VAULT))
 
+# brain-mcp owns the vault's vector index (.vectors.db); after a dream writes
+# notes we invoke its reindexer. Override with MICTLAN_BRAIN_MCP.
+DEFAULT_BRAIN_MCP = os.path.expanduser("~/github/skalas/brain-mcp")
+BRAIN_MCP_DIR = pathlib.Path(os.environ.get("MICTLAN_BRAIN_MCP", DEFAULT_BRAIN_MCP))
+
 NOTES = VAULT / "notes"
 CONVERSATIONS = VAULT / "conversations"
 DREAMS = VAULT / "dreams"
