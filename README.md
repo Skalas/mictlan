@@ -7,7 +7,7 @@
 
 The centralized **dreaming engine** — nightly memory consolidation for the whole
 agent ecosystem. One engine, many thin per-agent adapters, one Obsidian Vault
-(SSOT) served read-only by [`brain-mcp`](../brain-mcp).
+(SSOT) served read-only by [`brain-mcp`](https://github.com/Skalas/brain-mcp).
 
 Before `mictlan`, the dreaming code was scattered across the vault
 (`_system/scripts/`), claude config (`~/.claude/commands/dream.md`), the Mac Mini
