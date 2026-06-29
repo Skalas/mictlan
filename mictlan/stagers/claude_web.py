@@ -11,7 +11,7 @@ Also processes `memories.json` separately and outputs the user-memory text to
 review.
 
 Usage:
-    uv run --with pyyaml _system/scripts/stage_claude_web.py --src /Users/skalas/Documents/data-ed6bdce3-7153-4f6d-b5c0-9bb50569f24c-1778885468-08d58ff5-batch-0000
+    uv run --with pyyaml _system/scripts/stage_claude_web.py --src /path/to/claude-web-export
 """
 
 from __future__ import annotations

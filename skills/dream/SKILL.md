@@ -57,7 +57,7 @@ pipeline runs*; *what all agents must agree on* lives in the policy.
 ## Step 0: Preflight
 
 ```bash
-cd "/Users/skalas/Documents/Obsidian Vault"
+cd "${MICTLAN_VAULT:-$HOME/Documents/Obsidian Vault}"
 ```
 
 Run these checks. If any fail, abort and write a single-line dream journal explaining why:
