@@ -1,5 +1,7 @@
 # Mictlán
 
+![Mictlán: the dreaming engine](docs/assets/banner.png)
+
 > *Mictlán* — the Aztec land of the dead, reached by a nine-level journey. Here,
 > the nightly journey each day's memories make to reach their durable rest.
 
