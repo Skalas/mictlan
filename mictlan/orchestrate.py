@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 from dataclasses import asdict
@@ -43,7 +44,7 @@ import mictlan.lint as lint_proposals  # noqa: E402
 import mictlan.ledger as _ledger  # noqa: E402  (sharded dedup ledger)
 
 
-from mictlan.paths import VAULT as VAULT_DEFAULT
+from mictlan.paths import BRAIN_MCP_DIR, VAULT as VAULT_DEFAULT
 
 
 def _bind_analyzer_to_vault(vault: Path) -> None:
@@ -200,6 +201,35 @@ def cmd_prepare(args) -> int:
 # ---------- apply ----------
 
 
+def reindex_vectors(vault: Path) -> None:
+    """Refresh brain-mcp's embedding index after a dream writes to the vault.
+
+    mictlan writes notes straight to disk, bypassing brain-mcp's MCP write tools,
+    so brain-mcp's vector store (.vectors.db) goes stale until something reindexes
+    it — and reindex.sh only rebuilds MOCs + frontmatter ``links:``, never the
+    embeddings. Invoke brain-mcp's own incremental reindexer once (single model
+    load; only sections whose content hash changed are re-embedded).
+
+    Best-effort: a missing or failing brain-mcp must never fail the dream apply,
+    so this only logs on trouble.
+    """
+    brain = BRAIN_MCP_DIR
+    if not (brain / "pyproject.toml").exists():
+        print(f"[vectors: skipped — brain-mcp not found at {brain}]")
+        return
+    print(f"running brain-reindex in {brain} …")
+    result = subprocess.run(
+        ["uv", "run", "--project", str(brain), "brain-reindex"],
+        capture_output=True,
+        text=True,
+        env={**os.environ, "VAULT_PATH": str(vault)},
+    )
+    if result.returncode != 0:
+        print(f"[vectors: reindex failed — {(result.stderr or '').strip()[:200]}]")
+    elif result.stdout.strip():
+        print(result.stdout.strip())
+
+
 def cmd_apply(args) -> int:
     vault = args.vault.resolve()
     pdir = proposed_dir(vault)
@@ -354,6 +384,8 @@ def cmd_apply(args) -> int:
         if reindex.exists():
             print(f"\nrunning {reindex.relative_to(vault)} …")
             subprocess.run([str(reindex)], check=False, cwd=str(vault))
+        if applied_keys:
+            reindex_vectors(vault)
 
     if errors:
         print(f"\n{len(errors)} error(s):", file=sys.stderr)
