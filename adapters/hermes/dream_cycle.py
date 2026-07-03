@@ -3,6 +3,7 @@ import sys
 import sqlite3
 import json
 import re
+import tempfile
 from datetime import datetime, timedelta
 import httpx
 
@@ -10,25 +11,23 @@ import httpx
 from mictlan.paths import VAULT as _VAULT  # single shared vault resolver (MICTLAN_VAULT)
 
 DB_PATH = os.path.expanduser("~/.hermes/state.db")
-VAULT_PATH = str(_VAULT)
 DAILY_DIR = str(_VAULT / "daily")
-NOTES_DIR = str(_VAULT / "notes")
 AUDIT_LOG_PATH = os.path.expanduser("~/.hermes/logs/dream_audit.json")
 
-# Single model for the whole agent fleet (Hermes + OpenClaw share one key, one model).
+# Single model for the consolidation fleet.
 GEMINI_MODEL = "gemini-3.5-flash"
 GEMINI_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 
 # --- 0. Policy Loading Gate (FAIL CLOSED) ---
 # Policy loader comes from the shared engine (requires `mictlan` installed here).
 try:
-    from mictlan.policy import load_policy, sign, PolicyUnavailable
+    from mictlan.policy import load_policy
+    from mictlan.paths import INBOX
+    from mictlan.schema import DreamProposal, SectionAppend, LinkProposal, NodeProposal, NoteType
     policy = load_policy()
     policy_version = policy.version
     heading_signature = policy._d["heading_signature"]
     ingest_boundary_hermes = policy.boundary("Hermes") # usually ["~/.hermes/"]
-    protected_paths = policy._d.get("protected_paths", ["_system/", "_index/", ".obsidian/"])
-    max_stale_days = policy.max_stale_days
 except Exception as e:
     print(f"❌ FAIL CLOSED: Coexistence policy could not be loaded or parsed: {e}", file=sys.stderr)
     # Log audit as failed
@@ -42,9 +41,6 @@ except Exception as e:
 
 # Ensure the boundary config makes sense for the run
 INGEST_ROOTS = [os.path.expanduser(p) for p in ingest_boundary_hermes] if ingest_boundary_hermes else [os.path.expanduser("~/.hermes/")]
-
-# Degradation handling: check if policy is stale
-POLICY_STALE = policy.is_stale # If stale, we proceed in propose-only mode (marked in state.db)
 
 def load_keys_from_openclaw_env():
     env_path = os.path.expanduser("~/.openclaw/service-env/ai.openclaw.gateway.env")
@@ -381,82 +377,95 @@ type: daily
     print(f"✅ Daily Log written to: {daily_file}")
     return daily_file
 
-def apply_deep_promotions(target_date, insights):
-    """
-    Durable promotion: appends a H2 dated section to existing Obsidian project notes
-    """
-    if POLICY_STALE:
-        print("⚠️ Coexistence policy is STALE (max_stale_days threshold exceeded). PROPOSE-ONLY mode active. Skipping auto-appends.")
-        for item in insights:
-            note_name = item.get("target_note")
-            if note_name:
-                print(f"  [PROPOSED APPEND for [[{note_name}]]: {item['insight']}")
-        return
+_NOTE_TYPE = {"person": NoteType.person, "project": NoteType.project,
+              "topic": NoteType.topic, "ref": NoteType.ref}
 
-    for item in insights:
+
+def emit_proposal(target_date, data):
+    """Emit a DreamProposal envelope into the sink (dream-policy.md §4).
+
+    Hermes no longer writes to notes/ directly. It hands the consolidator
+    (Claude Code /dream) one envelope per run: insights that name an existing
+    note become `appends`; REM output becomes `proposed_links` / `proposed_nodes`.
+    The consolidator validates, auto-applies the safe appends (idempotent by the
+    `src:hermes:<date>` marker), and routes the rest to the approval gate.
+
+    Multiple insights targeting the same note on the same day are merged into one
+    section, preserving the prior one-section-per-note-per-day behaviour.
+    """
+    date_obj = datetime.strptime(target_date, "%Y-%m-%d").date()
+    marker = f"<!-- src:hermes:{target_date} -->"
+
+    # Merge insights by target note.
+    by_note = {}
+    for item in data.get("insights", []):
         note_name = item.get("target_note")
         if not note_name:
             continue
-            
-        # Check if the note exists in Vault
-        possible_paths = [
-            os.path.join(NOTES_DIR, f"{note_name}.md"),
-            os.path.join(NOTES_DIR, f"project-{note_name}.md"),
-            os.path.join(NOTES_DIR, f"topic-{note_name}.md"),
-            os.path.join(NOTES_DIR, f"person-{note_name}.md"),
-        ]
-        
-        target_path = None
-        for path in possible_paths:
-            if os.path.exists(path):
-                target_path = path
-                break
-                
-        if not target_path:
-            # Let's see if we can find any note matching this file name in the Vault
-            for root, dirs, files in os.walk(VAULT_PATH):
-                for file in files:
-                    if file.lower() == f"{note_name.lower()}.md":
-                        target_path = os.path.join(root, file)
-                        break
-                if target_path:
-                    break
-                    
-        if target_path:
-            # Containment guardrail (REFUSE): the target note name comes from the
-            # LLM; never let it escape the vault via `../` or symlinks.
-            real_target = os.path.realpath(target_path)
-            vault_real = os.path.realpath(VAULT_PATH)
-            if not (real_target == vault_real or real_target.startswith(vault_real + os.sep)):
-                print(f"🚫 REFUSE: Target {real_target} escapes the vault. Action blocked.")
-                continue
+        by_note.setdefault(note_name, []).append(item)
 
-            # Check protected paths guardrail (REFUSE)
-            rel_path = os.path.relpath(real_target, vault_real)
-            if any(rel_path.startswith(p) for p in protected_paths):
-                print(f"🚫 REFUSE: Target path {rel_path} resides inside a protected directory. Action blocked.")
-                continue
+    appends = []
+    for note_name, items in by_note.items():
+        lines = []
+        for insight in items:
+            lines.append(
+                f"- **Insight:** {insight.get('insight', '')}\n"
+                f"- **Evidencia:** {insight.get('evidence', '')}\n"
+                f"- **Acción:** {insight.get('action', '')} (#hermes)"
+            )
+        appends.append(SectionAppend(
+            target_slug=note_name,
+            section_date=date_obj,
+            content="\n\n".join(lines),
+            source_marker=marker,
+            durable=True,
+            guardrail_hit=policy.is_guardrailed(note_name),
+        ))
 
-            # Append section safely
-            with open(target_path, 'r', encoding='utf-8') as f:
-                content = f.read()
-                
-            sig_block = sign(policy, "Hermes", target_date)
-                
-            # Check if this agent's section for the target date already exists
-            short_sig = f"## {target_date} — Hermes"
-            if short_sig in content or sig_block in content:
-                print(f"ℹ️ Section {short_sig} already exists in [[{note_name}]]. Skipping append.")
-                continue
-                
-            append_block = f"\n\n{sig_block}\n- **Insight:** {item['insight']}\n- **Evidencia:** {item['evidence']}\n- **Acción:** {item['action']} (#hermes)"
-            
-            with open(target_path, 'a', encoding='utf-8') as f:
-                f.write(append_block)
-                
-            print(f"✅ Appended dated insight to [[{note_name}]] at {target_path}")
-        else:
-            print(f"⚠️ Warning: Could not find note [[{note_name}]] in Vault to promote insight.")
+    proposed_links = [
+        LinkProposal(
+            note_a=lk["note_a"], note_b=lk["note_b"],
+            evidence=lk.get("evidence", ""), confidence=lk.get("confidence", "low"),
+        )
+        for lk in data.get("proposed_links", [])
+    ]
+    proposed_nodes = [
+        NodeProposal(
+            name=n["name"], slug=n["slug"],
+            type=_NOTE_TYPE.get(n.get("type", "topic"), NoteType.topic),
+        )
+        for n in data.get("proposed_notes", [])
+    ]
+
+    envelope = DreamProposal(
+        agent="Hermes",
+        target_date=date_obj,
+        policy_version=policy_version,
+        appends=appends,
+        proposed_links=proposed_links,
+        proposed_nodes=proposed_nodes,
+    )
+
+    INBOX.mkdir(parents=True, exist_ok=True)
+    dest = INBOX / f"hermes-{target_date}.json"
+    payload = envelope.model_dump_json(indent=2)
+    # Atomic write: temp file on the same filesystem, then os.replace — a crash
+    # never leaves a half-written envelope for the consolidator to trip on.
+    fd, tmp = tempfile.mkstemp(prefix=f".{dest.name}.", suffix=".tmp", dir=str(INBOX))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(payload)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, dest)
+    except Exception:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+    print(f"✅ Emitted DreamProposal → {dest} "
+          f"({len(appends)} append(s), {len(proposed_links)} link(s), {len(proposed_nodes)} node(s))")
 
 def log_audit(target_date, status="success"):
     """
@@ -468,7 +477,6 @@ def log_audit(target_date, status="success"):
         "timestamp": datetime.now().isoformat(),
         "status": status,
         "policy_version": policy_version,
-        "policy_stale": POLICY_STALE
     }
     
     entries = []
@@ -513,7 +521,7 @@ def run_dream_cycle(target_date=None):
         data = verify_and_refine_consolidation(draft_data, transcript, target_date)
         
         write_daily_log_to_vault(target_date, data)
-        apply_deep_promotions(target_date, data.get("insights", []))
+        emit_proposal(target_date, data)
         log_audit(target_date, "success")
         print("🎉 Dreaming cycle successfully completed.")
     except Exception as e:
