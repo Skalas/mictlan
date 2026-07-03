@@ -19,6 +19,7 @@ import json
 import sys
 import time
 from datetime import datetime
+from typing import Any
 
 from mictlan.analyzer import list_existing_aliases, list_existing_slugs
 from mictlan.stagers.claude_web import parse_conversation, pre_grep_entities
@@ -93,13 +94,13 @@ class WebAPIError(RuntimeError):
 class _Response:
     """Minimal httpx-Response-shaped shim over a Playwright APIResponse."""
 
-    def __init__(self, status_code: int, ok: bool, url: str, payload: object):
+    def __init__(self, status_code: int, ok: bool, url: str, payload: Any):
         self.status_code = status_code
         self._ok = ok
         self._url = url
         self._payload = payload
 
-    def json(self) -> object:
+    def json(self) -> Any:
         return self._payload
 
     def raise_for_status(self) -> None:

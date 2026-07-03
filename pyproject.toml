@@ -13,7 +13,7 @@ dependencies = [
 
 [project.optional-dependencies]
 web = ["playwright>=1.44"]
-dev = ["pytest>=8.0"]
+dev = ["pytest>=8.0", "mypy>=1.10", "ruff>=0.5", "types-PyYAML", "types-jsonschema"]
 
 [build-system]
 requires = ["hatchling"]
@@ -24,3 +24,14 @@ packages = ["mictlan"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.mypy]
+python_version = "3.11"
+
+# Keep the gate green regardless of how mypy is invoked: playwright is an optional
+# extra with no stubs, and yaml/jsonschema stubs live in the `dev` extra (used for
+# real checking when installed; ignored, not fatal, when a bare `mypy .` runs
+# without them). types-PyYAML / types-jsonschema in `dev` still supply full stubs.
+[[tool.mypy.overrides]]
+module = ["playwright.*", "yaml", "jsonschema", "jsonschema.*"]
+ignore_missing_imports = true

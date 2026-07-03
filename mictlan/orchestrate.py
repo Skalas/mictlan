@@ -252,14 +252,14 @@ def cmd_apply(args) -> int:
     # human review would otherwise have to catch. ERRORs block; WARNs print.
     if not args.skip_lint:
         findings = lint_proposals.lint_all(vault, only=only_keys)
-        errors = [f for f in findings if f.severity == "ERROR"]
+        lint_errors = [f for f in findings if f.severity == "ERROR"]
         warns = [f for f in findings if f.severity == "WARN"]
         if findings:
             print("lint:")
             for f in findings:
                 print(f.fmt())
-            print(f"  → {len(errors)} error(s), {len(warns)} warning(s)\n")
-        if errors and not args.lint_warn_only:
+            print(f"  → {len(lint_errors)} error(s), {len(warns)} warning(s)\n")
+        if lint_errors and not args.lint_warn_only:
             print("apply blocked by lint errors. Re-run with --lint-warn-only to override.", file=sys.stderr)
             return 1
 
@@ -381,8 +381,8 @@ def cmd_apply(args) -> int:
 
     if errors:
         print(f"\n{len(errors)} error(s):", file=sys.stderr)
-        for e in errors:
-            print(f"  - {e}", file=sys.stderr)
+        for err in errors:
+            print(f"  - {err}", file=sys.stderr)
         return 1
     return 0
 
