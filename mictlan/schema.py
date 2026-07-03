@@ -1,9 +1,9 @@
 """The common proposal schema — the single envelope every dreamer emits.
 
-This is the *contract* that unifies the three agents (Claude Code, Hermes,
-OpenClaw/Nico). Each agent runs its own pipeline but returns a ``DreamProposal``
-instead of bespoke markdown, so the outputs become reconcilable: one
-entity-resolution + human-approval gate consumes proposals from all agents.
+This is the *contract* that unifies the fleet (Claude Code + Hermes). Each agent
+runs its own pipeline but returns a ``DreamProposal`` instead of bespoke markdown,
+so the outputs become reconcilable: one entity-resolution + human-approval gate
+consumes proposals from all agents.
 
 Trust posture (mirrors dream-policy.md §1, §2, §5):
 - ``appends`` to an EXISTING entity note are the ONLY auto-applyable output

@@ -19,7 +19,7 @@ with the shared policy enforced by hand. `mictlan` is the one home. See
 
 ```
 many source-specific dreamers   →   common proposal schema   →   one semantic-dedup
-(Claude Code · Hermes · Nico)        (mictlan.schema)            + human-approval gate   →   graph write
+(Claude Code · Hermes)               (mictlan.schema)            + human-approval gate   →   graph write
    fan-in of PROPOSALS, not of PROCESSING                          (node creation, with you)
 ```
 
@@ -47,24 +47,23 @@ mictlan/                 the engine — generic, installed once
 
 adapters/                  thin per-agent: discover + parse → emit DreamProposal
 ├─ claude_code/           (uses skills/dream)
-├─ hermes/                dream_cycle.py  (Telegram + finance, Mac Mini)
-└─ openclaw/              Nico shim/config (compiled bundle — config only)
+└─ hermes/                dream_cycle.py  (Telegram, Mac Mini) → emits to the sink
 
 skills/dream/              the Claude Code /dream skill (installed to ~/.claude)
 docs/adr/                  decision records
 tests/
 ```
 
-**One model across all dreamers:** `gemini-3.5-flash`. OpenClaw may fall back to
-other models *only on failure*; Hermes and Claude Code use it exclusively.
+**One model across all dreamers:** `gemini-3.5-flash`, used exclusively by Hermes
+and Claude Code. (OpenClaw/Nico was retired 2026-06-27; the fleet is now those two.)
 
 ## Governance stays in the vault
 
 `mictlan` is engine code; the *rules* remain single files in the vault, served
 by brain-MCP and read at every run:
 
-- `dream-policy.md` — coexistence rules (attribution, guardrails, ingest
-  boundaries, propose-only). Loaded via `mictlan.policy` (fail-closed).
+- `dream-policy.md` — the single-consolidator contract (provenance, guardrails,
+  ingest boundaries, sink, propose-only). Loaded via `mictlan.policy` (fail-closed).
 - `_system/CLAUDE.md` — vault write conventions (doctrine).
 - `architecture.md` — the topology map.
 
@@ -109,13 +108,7 @@ Runs `uv sync` and symlinks `~/.hermes/scripts/dream_cycle.py` → the repo adap
 uv run --project ~/github/skalas/mictlan python ~/.hermes/scripts/dream_cycle.py [YYYY-MM-DD]
 ```
 
-**OpenClaw / Nico** (Mac Mini) — dreaming is a compiled bundle, so there is **no package to install**; mictlan owns only the config:
-
-```bash
-cd ~/github/skalas/mictlan && make install-openclaw   # prints the config to verify
-```
-
-Ensure `~/.openclaw/openclaw.json` has `model.primary = google/gemini-3.5-flash` and no dreaming-specific model override (fallbacks apply only on failure).
+> OpenClaw / Nico was retired on 2026-06-27 and is no longer part of the fleet.
 
 ### Updating the mini from the laptop
 
@@ -126,6 +119,7 @@ make test             # uv run --extra dev pytest
 
 ## Status
 
-v0.1 — scaffolded by copy-first migration (engine copied in; nothing deleted from
-old homes yet). Cutover (removing old copies, redeploying the mini) and the graph
-reprocess are gated follow-ups — see the ADR.
+v0.2 — single-consolidator cutover landed: Hermes emits `DreamProposal` envelopes
+to the sink (Claude Code `/dream` is the sole vault writer), the duplicate vault
+policy loader is deleted, and OpenClaw/Nico is retired. The graph reprocess (ADR
+0002) and CI remain gated follow-ups — see the ADR and issue #1.
