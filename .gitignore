@@ -11,3 +11,16 @@ build/
 .claude-web-cookies.json
 staging/
 proposed/
+
+# metate session handoff
+.metate/session.json
+# metate transient session-id capture buffer
+.metate/.session-start.json
+# metate issue ledger
+.metate/issues.json
+# metate profile reconcile backups
+.metate/*.bak
+# codebase-memory Cursor rule is installed tooling (source: metate repo)
+.cursor/rules/codebase-memory.mdc
+# metate reviewer agents are installed tooling (source: metate repo)
+.cursor/agents/metate-*.md
