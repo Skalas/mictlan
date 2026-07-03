@@ -26,7 +26,6 @@ import json
 import os
 import subprocess
 import sys
-from dataclasses import asdict
 from datetime import date
 from pathlib import Path
 
@@ -50,17 +49,10 @@ from mictlan.paths import BRAIN_MCP_DIR, VAULT as VAULT_DEFAULT
 def _bind_analyzer_to_vault(vault: Path) -> None:
     """Repoint analyzer's module-level path constants at a specific vault.
 
-    analyzer.py was written before we had multi-vault test harnesses; its
-    VAULT / NOTES / CONVERSATIONS / STATE_PATH / RECIPE_PATH constants are
-    captured at import time. Tests build a tmp mini-vault and run this script
-    against it; without re-binding, build_vault_context would still scan the
-    real production vault.
+    Delegates to analyzer.bind_vault so the rebind logic lives in one place
+    (tests + the inbox CLI use the same helper).
     """
-    analyzer.VAULT = vault
-    analyzer.NOTES = vault / "notes"
-    analyzer.CONVERSATIONS = vault / "conversations"
-    analyzer.STATE_PATH = vault / "_system" / "ingestion" / "state.json"
-    analyzer.RECIPE_PATH = vault / "_system" / "recipes" / "conversation-append-pass.md"
+    analyzer.bind_vault(vault)
 
 
 def staging_dirs(vault: Path) -> list[Path]:
@@ -194,7 +186,7 @@ def cmd_prepare(args) -> int:
     for key, entry in manifest.items():
         print(f"  {key}  {entry['title'][:80]}")
     print(f"\nnext: have a subagent read each *.prompt.md and write {pdir.name}/<key>.json,")
-    print(f"then run: uv run _system/scripts/orchestrate_digest.py apply --confirm")
+    print("then run: uv run _system/scripts/orchestrate_digest.py apply --confirm")
     return 0
 
 

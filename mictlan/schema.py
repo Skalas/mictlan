@@ -105,7 +105,6 @@ class DreamProposal(BaseModel):
     agent: str = Field(..., description="registered agent identity (policy.agents)")
     target_date: date
     policy_version: int
-    policy_stale: bool = False
 
     appends: list[SectionAppend] = Field(default_factory=list)
     proposed_nodes: list[NodeProposal] = Field(default_factory=list)
