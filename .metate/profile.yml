@@ -8,9 +8,9 @@ shipGate: "ruff check . && mypy . && pytest"   # full pre-PR gate (mirrors CI)
 
 # --- implementer (the only writer) ---------------------------------------
 implementer:
-  backend: cursor          # cursor | codex | claude | gemini
+  backend: claude          # cursor | codex | claude | gemini
   model: ""                # e.g. composer-2.5 | gpt-5.3-codex-fast (blank = adapter default)
-  autonomous: false        # claude backend only. true → bootstrap whitelists `Bash(claude -p:*)`
+  autonomous: true         # claude backend only. true → bootstrap whitelists `Bash(claude -p:*)`
                            # in .claude/settings.local.json (personal, gitignored) so headless
                            # rounds don't prompt. Trade-off: removes the per-call approval gate on
                            # the nested implementer. cursor/codex gate writes via their own flags.
