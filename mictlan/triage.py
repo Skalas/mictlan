@@ -19,7 +19,6 @@ Output sections:
 
 from __future__ import annotations
 
-import re
 import sys
 from collections import Counter, defaultdict
 from datetime import date

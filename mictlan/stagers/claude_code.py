@@ -20,13 +20,12 @@ import argparse
 import json
 import re
 import sys
-from datetime import date, datetime
 from pathlib import Path
 
 from mictlan.analyzer import list_existing_aliases, list_existing_slugs
+from mictlan.paths import VAULT
 
 PROJECTS_ROOT = Path.home() / ".claude" / "projects"
-from mictlan.paths import VAULT
 STAGING = VAULT / "_system" / "ingestion" / "staging" / "claude-code"
 
 # Patterns to strip from user text (slash-command output, system reminders)
@@ -279,7 +278,7 @@ def main() -> int:
         staged += 1
 
     print(f"scanned={total} staged={staged} skipped={skipped} already_ledgered={ledgered}")
-    print(f"staging dir: _system/ingestion/staging/claude-code/")
+    print("staging dir: _system/ingestion/staging/claude-code/")
     print(f"with entities: {sum(1 for p in STAGING.glob('*.json') if json.loads(p.read_text()).get('candidate_entities'))}")
     return 0
 

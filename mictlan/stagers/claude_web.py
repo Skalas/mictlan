@@ -19,7 +19,6 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from datetime import date
 from pathlib import Path
 
 from mictlan.analyzer import list_existing_aliases, list_existing_slugs
@@ -189,7 +188,7 @@ def main() -> int:
         print(f"projects: {len(proj_records)} → staging/claude-web/_projects.json")
 
     print(f"\nstaged={staged} skipped={skipped} already_ledgered={ledgered} oversized={sum(1 for p in STAGING.glob('*.json') if not p.name.startswith('_') and json.loads(p.read_text()).get('oversized'))}")
-    print(f"staging dir: _system/ingestion/staging/claude-web/")
+    print("staging dir: _system/ingestion/staging/claude-web/")
     return 0
 
 
