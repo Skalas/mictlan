@@ -23,7 +23,6 @@ from __future__ import annotations
 
 import datetime as _dt
 import json
-import os
 import pathlib
 import sys
 
@@ -34,7 +33,7 @@ except ModuleNotFoundError:  # uv run --with pyyaml
     raise
 
 # Vault + policy location come from the single shared resolver.
-from mictlan.paths import VAULT, POLICY_PATH  # noqa: E402
+from mictlan.paths import POLICY_PATH  # noqa: E402
 
 
 class PolicyUnavailable(Exception):
@@ -46,15 +45,18 @@ class Policy:
         self._d = data
         self.version = data["policy_version"]
         self.date = _dt.date.fromisoformat(data["policy_date"])
-        self.max_stale_days = int(data.get("max_stale_days", 7))
-
-    @property
-    def is_stale(self) -> bool:
-        return (_dt.date.today() - self.date).days > self.max_stale_days
 
     @property
     def agents(self) -> list[str]:
         return self._d["agents"]
+
+    @property
+    def areas(self) -> list[str]:
+        return self._d.get("areas", [])
+
+    @property
+    def sink(self) -> str:
+        return self._d.get("sink", "_system/ingestion/inbox/")
 
     def boundary(self, agent: str) -> list[str]:
         return self._d["ingest_boundaries"].get(agent, [])
@@ -114,7 +116,6 @@ def _main(argv: list[str]) -> int:
         "ok": True,
         "policy_version": pol.version,
         "policy_date": pol.date.isoformat(),
-        "stale": pol.is_stale,
         "agents": pol.agents,
     }
     print(json.dumps(status if check else pol.as_dict(), indent=2, ensure_ascii=False))

@@ -29,6 +29,7 @@ SYSTEM = VAULT / "_system"
 INGESTION = SYSTEM / "ingestion"
 STAGING = INGESTION / "staging"
 PROPOSED = INGESTION / "proposed"
+INBOX = INGESTION / "inbox"   # the sink: producers drop DreamProposal envelopes here
 SCHEMAS = SYSTEM / "schemas"
 RECIPES = SYSTEM / "recipes"
 POLICY_PATH = SYSTEM / "dream-policy.md"

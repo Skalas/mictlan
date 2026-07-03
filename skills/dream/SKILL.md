@@ -36,13 +36,13 @@ in this file. Pull them at run start:
    `_system/dream-policy.md` directly (you're cd'd into the vault by Step 0).
 2. Bind from its frontmatter: `policy_version`, `ingest_boundaries["Claude Code"]`,
    `guardrail_slug_prefixes`, `guardrail_slugs_exact`, `protected_paths`,
-   `max_stale_days`.
+   `areas`, `sink`.
 3. **Degradation (cannot violate):**
-   - Policy missing / `.icloud` placeholder → **FAIL CLOSED**: abort, write a
-     single-line dream journal `policy_unavailable`, exit non-zero.
-   - Policy readable but `policy_date` older than `max_stale_days` → proceed
-     **PROPOSE-ONLY**: stamp `policy_stale: true` in the journal and downgrade
-     every auto-apply that touches shared state to held-for-review.
+   - Policy missing / `.icloud` placeholder / unparseable → **FAIL CLOSED**: abort,
+     write a single-line dream journal `policy_unavailable`, exit non-zero.
+   - There is no wall-clock staleness mode in policy v2 (removed — it measured age
+     since authorship, not replica freshness). Fail-closed on unreadable is the only
+     degradation.
 4. **Attribution is unchanged:** this pipeline's appends keep their existing
    format `## <date> — <heading> <!-- src:<source>:<shortid> -->`. The `src:`
    marker IS Claude Code's attribution (policy §1) — do NOT add an agent
@@ -201,6 +201,28 @@ For each conversation triaged as `ephemeral`:
 ```
 
 Set frontmatter `status: archived` on each ephemeral conversation file via direct Edit. Bump `updated:` to today. Reindex picks it up on the final pass.
+
+## Step 5.5: Drain the sink (producer envelopes)
+
+Producers (today: Hermes) don't write `notes/` directly — they drop a
+`DreamProposal` envelope into the sink (`_system/ingestion/inbox/`, policy §4).
+Drain it: validate each envelope, auto-apply its **safe** appends (durable,
+non-guardrailed, target exists — idempotent by the `<!-- src:… -->` marker, so a
+re-run or the interim double-write can't double-apply), and route the rest to the
+approval gate.
+
+Dry-run first, then apply:
+
+```bash
+uv run --project ~/github/skalas/mictlan python -m mictlan.inbox            # dry-run: report only
+uv run --project ~/github/skalas/mictlan python -m mictlan.inbox --confirm  # apply safe appends
+```
+
+The JSON summary reports `safe_appends`, `held_for_review`, `backlog`, and any
+`envelopes_errors` (malformed / schema-invalid / unregistered-agent — each skipped,
+never fatal). Fold `held_for_review` and `backlog` into the dream journal (Step 7)
+and the approval gate (Step 6.5) alongside Claude Code's own REM output. Record
+`envelopes_errors` under the journal's `## Errors`.
 
 ## Step 6: REM — cross-link recombination (PROPOSE ONLY)
 

@@ -45,7 +45,7 @@ def test_semantic_hit_folds_low_score_creates():
 
 def test_cross_agent_merge_sums_times_seen():
     a = _proposal("Hermes", [NodeProposal(name="R&D", slug="rnd", type=NoteType.topic, times_seen=2)])
-    b = _proposal("Nico", [NodeProposal(name="R&D", slug="rnd", type=NoteType.topic, times_seen=3)])
+    b = _proposal("Claude Code", [NodeProposal(name="R&D", slug="rnd", type=NoteType.topic, times_seen=3)])
     backlog = resolve_nodes([a, b], existing_slugs=set(), search=lambda q, k: [])
     assert len(backlog.create) == 1
     assert backlog.create[0].times_seen == 5

@@ -18,7 +18,7 @@ import json
 import os
 import re
 import tempfile
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 
@@ -148,9 +148,16 @@ def write_if_changed(path: Path, content: str) -> bool:
 
 
 def find_note(slug: str) -> Path | None:
+    # Containment (defense-in-depth): target_slug can originate from an LLM or an
+    # external producer's envelope. Reject anything that isn't a clean slug or that
+    # would resolve outside the vault, at the layer that performs the write — never
+    # rely on a caller's incidental input filtering.
+    if not SLUG_RE.match(slug):
+        return None
+    vault_root = VAULT.resolve()
     for folder in ("notes", "meetings", "daily", "conversations"):
-        p = VAULT / folder / f"{slug}.md"
-        if p.exists():
+        p = (VAULT / folder / f"{slug}.md").resolve()
+        if p.exists() and p.is_relative_to(vault_root):
             return p
     return None
 
@@ -568,6 +575,21 @@ def analyze_with_llm(unit: ConversationUnit, vault_context: dict) -> GraphUpdate
 
 
 # ---------- Helpers for ingesters ----------
+
+
+def bind_vault(vault: Path) -> None:
+    """Repoint the module-level path constants at a specific vault.
+
+    analyzer's VAULT/NOTES/CONVERSATIONS/STATE_PATH/RECIPE_PATH are captured at
+    import time; any CLI or test running against a non-default vault must rebind
+    them (all five, together) before calling apply()/build_vault_context/etc.
+    """
+    global VAULT, NOTES, CONVERSATIONS, STATE_PATH, RECIPE_PATH
+    VAULT = vault
+    NOTES = vault / "notes"
+    CONVERSATIONS = vault / "conversations"
+    STATE_PATH = vault / "_system" / "ingestion" / "state.json"
+    RECIPE_PATH = vault / "_system" / "recipes" / "conversation-append-pass.md"
 
 
 def list_existing_slugs() -> set[str]:

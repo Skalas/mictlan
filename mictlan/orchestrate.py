@@ -26,7 +26,6 @@ import json
 import os
 import subprocess
 import sys
-from dataclasses import asdict
 from datetime import date
 from pathlib import Path
 
@@ -50,17 +49,10 @@ from mictlan.paths import BRAIN_MCP_DIR, VAULT as VAULT_DEFAULT
 def _bind_analyzer_to_vault(vault: Path) -> None:
     """Repoint analyzer's module-level path constants at a specific vault.
 
-    analyzer.py was written before we had multi-vault test harnesses; its
-    VAULT / NOTES / CONVERSATIONS / STATE_PATH / RECIPE_PATH constants are
-    captured at import time. Tests build a tmp mini-vault and run this script
-    against it; without re-binding, build_vault_context would still scan the
-    real production vault.
+    Delegates to analyzer.bind_vault so the rebind logic lives in one place
+    (tests + the inbox CLI use the same helper).
     """
-    analyzer.VAULT = vault
-    analyzer.NOTES = vault / "notes"
-    analyzer.CONVERSATIONS = vault / "conversations"
-    analyzer.STATE_PATH = vault / "_system" / "ingestion" / "state.json"
-    analyzer.RECIPE_PATH = vault / "_system" / "recipes" / "conversation-append-pass.md"
+    analyzer.bind_vault(vault)
 
 
 def staging_dirs(vault: Path) -> list[Path]:
@@ -194,7 +186,7 @@ def cmd_prepare(args) -> int:
     for key, entry in manifest.items():
         print(f"  {key}  {entry['title'][:80]}")
     print(f"\nnext: have a subagent read each *.prompt.md and write {pdir.name}/<key>.json,")
-    print(f"then run: uv run _system/scripts/orchestrate_digest.py apply --confirm")
+    print("then run: uv run _system/scripts/orchestrate_digest.py apply --confirm")
     return 0
 
 
@@ -260,14 +252,14 @@ def cmd_apply(args) -> int:
     # human review would otherwise have to catch. ERRORs block; WARNs print.
     if not args.skip_lint:
         findings = lint_proposals.lint_all(vault, only=only_keys)
-        errors = [f for f in findings if f.severity == "ERROR"]
+        lint_errors = [f for f in findings if f.severity == "ERROR"]
         warns = [f for f in findings if f.severity == "WARN"]
         if findings:
             print("lint:")
             for f in findings:
                 print(f.fmt())
-            print(f"  → {len(errors)} error(s), {len(warns)} warning(s)\n")
-        if errors and not args.lint_warn_only:
+            print(f"  → {len(lint_errors)} error(s), {len(warns)} warning(s)\n")
+        if lint_errors and not args.lint_warn_only:
             print("apply blocked by lint errors. Re-run with --lint-warn-only to override.", file=sys.stderr)
             return 1
 
@@ -389,8 +381,8 @@ def cmd_apply(args) -> int:
 
     if errors:
         print(f"\n{len(errors)} error(s):", file=sys.stderr)
-        for e in errors:
-            print(f"  - {e}", file=sys.stderr)
+        for err in errors:
+            print(f"  - {err}", file=sys.stderr)
         return 1
     return 0
 
