@@ -24,7 +24,7 @@ import re
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
 
 from pydantic import ValidationError
 
@@ -49,6 +49,11 @@ class IngestResult:
 
     proposals: list[DreamProposal] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
+    # Source file per validated proposal (parallel to `proposals`) and the files
+    # that failed validation — so a confirmed drain can move both out of the
+    # sink instead of reprocessing them forever.
+    paths: list[Path] = field(default_factory=list)
+    rejected_paths: list[Path] = field(default_factory=list)
 
 
 @dataclass
@@ -59,6 +64,8 @@ class DrainResult:
     held: list[SectionAppend] = field(default_factory=list)
     backlog: Optional[ResolvedBacklog] = None
     errors: list[str] = field(default_factory=list)
+    processed_paths: list[Path] = field(default_factory=list)
+    rejected_paths: list[Path] = field(default_factory=list)
 
 
 def load_envelopes(inbox: Path, agents: set[str]) -> IngestResult:
@@ -78,16 +85,20 @@ def load_envelopes(inbox: Path, agents: set[str]) -> IngestResult:
             raw = json.loads(p.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as e:
             result.errors.append(f"{p.name}: unreadable/malformed JSON ({e})")
+            result.rejected_paths.append(p)
             continue
         try:
             prop = DreamProposal.model_validate(raw)
         except ValidationError as e:
             result.errors.append(f"{p.name}: schema-invalid ({e.error_count()} error(s))")
+            result.rejected_paths.append(p)
             continue
         if prop.agent not in agents:
             result.errors.append(f"{p.name}: unregistered agent {prop.agent!r}")
+            result.rejected_paths.append(p)
             continue
         result.proposals.append(prop)
+        result.paths.append(p)
     return result
 
 
@@ -159,21 +170,41 @@ def drain(
         held=held,
         backlog=backlog,
         errors=ingest.errors,
+        processed_paths=ingest.paths,
+        rejected_paths=ingest.rejected_paths,
     )
 
 
 # ---------- CLI ----------
 
 
+def _merge_unique(existing: list[dict], new: list[dict]) -> list[dict]:
+    """Union two lists of JSON objects, first-seen wins, keyed by content hash."""
+    out: list[dict] = []
+    seen: set[str] = set()
+    for item in existing + new:
+        key = hashlib.sha1(
+            json.dumps(item, sort_keys=True, ensure_ascii=False).encode("utf-8")
+        ).hexdigest()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(item)
+    return out
+
+
 def _persist_review(inbox: Path, target_date: str, result: DrainResult) -> Optional[str]:
-    """Write the FULL held appends + node backlog to ``held-<date>.json`` so the
+    """Merge the FULL held appends + node backlog into ``held-<date>.json`` so the
     approval gate (/dream Step 6.5) has content to act on — not just counts.
+
+    Same-day reruns MERGE (dedup by content) rather than overwrite, so items the
+    human already saw aren't silently replaced by a later, smaller drain.
 
     Returns the relative filename written, or None when there's nothing to review.
     """
     if not result.held and not (result.backlog and (result.backlog.create or result.backlog.review)):
         return None
-    payload = {
+    payload: dict[str, Any] = {
         "target_date": target_date,
         "held_appends": [a.model_dump(mode="json") for a in result.held],
         "backlog": {
@@ -184,8 +215,47 @@ def _persist_review(inbox: Path, target_date: str, result: DrainResult) -> Optio
     }
     dest = inbox / f"held-{target_date}.json"
     inbox.mkdir(parents=True, exist_ok=True)
+    if dest.exists():
+        try:
+            prior = json.loads(dest.read_text(encoding="utf-8"))
+            payload["held_appends"] = _merge_unique(
+                prior.get("held_appends", []), payload["held_appends"]
+            )
+            for bucket in ("create", "fold", "review"):
+                payload["backlog"][bucket] = _merge_unique(
+                    prior.get("backlog", {}).get(bucket, []), payload["backlog"][bucket]
+                )
+        except (json.JSONDecodeError, OSError):
+            pass  # unreadable prior file: today's content is still the best record
     dest.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
     return dest.name
+
+
+def _archive_envelopes(inbox: Path, result: DrainResult) -> dict[str, int]:
+    """Move drained envelopes out of the sink so the next drain starts empty.
+
+    Processed envelopes go to ``archive/`` (their held content, if any, was
+    already persisted to the review file); invalid ones go to ``rejected/`` for
+    human inspection instead of erroring on every future drain.
+    """
+    moved = {"archived": 0, "rejected": 0}
+    for paths, sub, counter in (
+        (result.processed_paths, "archive", "archived"),
+        (result.rejected_paths, "rejected", "rejected"),
+    ):
+        if not paths:
+            continue
+        dest_dir = inbox / sub
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        for p in paths:
+            dest = dest_dir / p.name
+            n = 1
+            while dest.exists():
+                dest = dest_dir / f"{p.stem}.{n}{p.suffix}"
+                n += 1
+            p.rename(dest)
+            moved[counter] += 1
+    return moved
 
 
 def _main(argv: list[str] | None = None) -> int:
@@ -237,11 +307,16 @@ def _main(argv: list[str] | None = None) -> int:
         return 0
 
     report = analyzer.apply(result.graph_update, today=today)
+    # Order matters: persist held content BEFORE archiving its source envelopes,
+    # so a crash in between never leaves held items with no remaining record.
     review_file = _persist_review(inbox, today, result)
+    moved = _archive_envelopes(inbox, result)
     summary["mode"] = "applied"
     summary["appended"] = report.appended
     summary["skipped_idempotent"] = report.skipped_idempotent
     summary["review_file"] = review_file  # held appends + node backlog for Step 6.5
+    summary["envelopes_archived"] = moved["archived"]
+    summary["envelopes_rejected"] = moved["rejected"]
     summary["apply_errors"] = [e for e in report.errors if not e.startswith("skipped:")]
     print(json.dumps(summary, indent=2, ensure_ascii=False))
     return 1 if summary["apply_errors"] else 0

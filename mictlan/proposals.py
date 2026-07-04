@@ -50,15 +50,15 @@ class ResolvedBacklog:
         }
 
 
-def _exact_slug_match(node: NodeProposal, existing_slugs: set[str]) -> Optional[str]:
-    candidates = {
-        node.slug,
-        node.slug.replace("-", ""),
-    }
-    for c in candidates:
-        if c in existing_slugs:
-            return c
-    return None
+def _exact_slug_match(
+    node: NodeProposal, existing_slugs: set[str], dehyphenated: dict[str, str]
+) -> Optional[str]:
+    """Match a proposed slug against existing ones, hyphen-insensitively in BOTH
+    directions: proposal "saludmental" folds into existing "salud-mental" and
+    vice versa (same bidirectional rule as pending.is_covered)."""
+    if node.slug in existing_slugs:
+        return node.slug
+    return dehyphenated.get(node.slug.replace("-", ""))
 
 
 def resolve_nodes(
@@ -77,6 +77,7 @@ def resolve_nodes(
         threshold: semantic score above which a hit is treated as the same entity.
     """
     backlog = ResolvedBacklog()
+    dehyphenated = {s.replace("-", ""): s for s in existing_slugs}
 
     # Merge identical proposals across agents first (same slug seen by two dreamers).
     merged: dict[str, NodeProposal] = {}
@@ -88,7 +89,7 @@ def resolve_nodes(
                 merged[node.slug] = node.model_copy(deep=True)
 
     for node in merged.values():
-        hit = _exact_slug_match(node, existing_slugs)
+        hit = _exact_slug_match(node, existing_slugs, dehyphenated)
         if hit:
             node.resolves_to_existing = hit
             node.resolution_confidence = "high"

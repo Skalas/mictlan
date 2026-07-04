@@ -4,7 +4,7 @@ CLAUDE_CMDS    ?= $(HOME)/.claude/commands
 HERMES_SCRIPTS ?= $(HOME)/.hermes/scripts
 REPO_PATH      ?= $(HOME)/github/skalas/mictlan
 
-.PHONY: help install install-hermes link-skill deploy-mini test check
+.PHONY: help install install-hermes link-skill deploy-mini test check compile-check
 
 help:
 	@echo "mictlan — install targets:"
@@ -40,5 +40,12 @@ deploy-mini:
 test:
 	uv run --extra dev pytest -q
 
+# The real gate — same three checks CI runs.
 check:
+	uv run --extra dev ruff check .
+	uv run --extra dev mypy .
+	uv run --extra dev pytest -q
+
+# Syntax-only smoke pass (no deps needed); NOT a quality gate.
+compile-check:
 	python3 -m py_compile mictlan/*.py mictlan/stagers/*.py adapters/hermes/*.py

@@ -65,6 +65,21 @@ def test_safe_appends_excludes_guardrail_and_ephemeral():
     assert [a.target_slug for a in safe] == ["goes"]
 
 
+def test_slug_dedup_is_hyphen_insensitive_both_directions():
+    def prop(slug):
+        return DreamProposal(
+            agent="Hermes", target_date=date(2026, 6, 27), policy_version=1,
+            proposed_nodes=[NodeProposal(name=slug, slug=slug, type=NoteType.topic)],
+        )
+
+    # proposal without hyphens folds into hyphenated existing note
+    backlog = resolve_nodes([prop("saludmental")], existing_slugs={"salud-mental"})
+    assert [n.resolves_to_existing for n in backlog.fold] == ["salud-mental"]
+    # and the reverse
+    backlog = resolve_nodes([prop("salud-mental")], existing_slugs={"saludmental"})
+    assert [n.resolves_to_existing for n in backlog.fold] == ["saludmental"]
+
+
 def test_append_durability_defaults_to_fail_closed():
     a = SectionAppend(target_slug="goes", section_date=date(2026, 6, 27),
                       content="x", source_marker="sig")

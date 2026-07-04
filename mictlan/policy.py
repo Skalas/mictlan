@@ -7,9 +7,9 @@ imports this module. Both read the SAME file — `_system/dream-policy.md` — s
 served policy and the file-read policy can never diverge.
 
 Usage:
-    from mictlan.policy import load_policy, sign, PolicyUnavailable
+    from mictlan.policy import load_policy, attribution_heading, PolicyUnavailable
     pol = load_policy()                 # raises PolicyUnavailable -> caller FAILS CLOSED
-    heading = sign(pol, "Hermes", "2026-06-25")
+    heading = attribution_heading(pol, "Hermes", "2026-06-25")
     if pol.is_guardrailed("financial-q2"): ...
 
 CLI (for shell agents / debugging):
@@ -97,8 +97,12 @@ def load_policy(path: pathlib.Path = POLICY_PATH) -> Policy:
     return Policy(data)
 
 
-def sign(pol: Policy, agent: str, date: str) -> str:
-    """Return the canonical signed heading + version stamp for `agent` on `date`."""
+def attribution_heading(pol: Policy, agent: str, date: str) -> str:
+    """Return the canonical attribution heading + version stamp for `agent` on `date`.
+
+    Provenance labeling ONLY — this is a formatted string from the policy file,
+    not a cryptographic signature, and provides no tamper protection.
+    """
     if agent not in pol.agents:
         raise ValueError(f"unregistered agent {agent!r}; must be one of {pol.agents}")
     sig = pol._d["heading_signature"].format(date=date, agent=agent)

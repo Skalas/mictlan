@@ -17,19 +17,41 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import sys
 import time
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 from mictlan.analyzer import list_existing_aliases, list_existing_slugs
-from mictlan.stagers.claude_web import parse_conversation, pre_grep_entities
+from mictlan.stagers._common import pre_grep_entities
+from mictlan.stagers.claude_web import parse_conversation
 
 import mictlan.ledger as _ledger
 from mictlan.paths import VAULT
 STAGING = VAULT / "_system" / "ingestion" / "staging" / "claude-web"
-COOKIE_PATH = VAULT / "_system" / "ingestion" / ".claude-web-cookies.json"
-BROWSER_DATA = VAULT / "_system" / "ingestion" / ".claude-web-browser"
+# Credentials live OUTSIDE the vault: the vault is iCloud-synced across devices,
+# and live claude.ai session material must never ride along.
+LOCAL_STATE = Path(os.path.expanduser(os.environ.get("MICTLAN_STATE", "~/.mictlan")))
+COOKIE_PATH = LOCAL_STATE / "claude-web-cookies.json"
+BROWSER_DATA = LOCAL_STATE / "claude-web-browser"
+# Pre-migration locations (cookies + browser profile used to live in the vault).
+_LEGACY_COOKIE_PATH = VAULT / "_system" / "ingestion" / ".claude-web-cookies.json"
+_LEGACY_BROWSER_DATA = VAULT / "_system" / "ingestion" / ".claude-web-browser"
+
+
+def migrate_legacy_state() -> None:
+    """One-time move of cookies + browser profile out of the synced vault."""
+    LOCAL_STATE.mkdir(parents=True, exist_ok=True)
+    os.chmod(LOCAL_STATE, 0o700)
+    if _LEGACY_COOKIE_PATH.exists() and not COOKIE_PATH.exists():
+        shutil.move(str(_LEGACY_COOKIE_PATH), str(COOKIE_PATH))
+        os.chmod(COOKIE_PATH, 0o600)
+        print(f"migrated cookies out of the vault -> {COOKIE_PATH}")
+    if _LEGACY_BROWSER_DATA.exists() and not BROWSER_DATA.exists():
+        shutil.move(str(_LEGACY_BROWSER_DATA), str(BROWSER_DATA))
+        print(f"migrated browser profile out of the vault -> {BROWSER_DATA}")
 BASE_URL = "https://claude.ai"
 API_BASE = f"{BASE_URL}/api"
 PAGE_SIZE = 20
@@ -215,6 +237,8 @@ def main() -> int:
     ap.add_argument("--clean", action="store_true", help="Remove existing staged files before writing")
     ap.add_argument("--dry-run", action="store_true", help="List conversations without staging")
     args = ap.parse_args()
+
+    migrate_legacy_state()
 
     cookies = load_cookies()
     if args.login or not cookies:

@@ -110,6 +110,16 @@ never break mid-migration.
 3. **Typed relationships** (`relations:` frontmatter) where they pay off
    (org-charts, wedding vendors, restaurant attributes).
 
+## Addendum (2026-07-03): the `daily/` exemption
+
+Hermes writes its daily log (`daily/<date>.md`) directly, outside the
+propose-only sink. This is a deliberate, scoped exemption — dated operational
+summaries in a Hermes-owned namespace, not graph knowledge — so the
+"single vault writer" claim reads: Claude Code `/dream` is the sole writer of
+**notes/ and the graph**; `daily/` belongs to Hermes. In the same pass, append
+durability became fail-closed: producers can no longer self-declare
+`durable=true`; every Hermes append is held at the human approval gate.
+
 ## Alternatives considered
 
 - **One monolithic ingester** (single process consuming all sources). Rejected:

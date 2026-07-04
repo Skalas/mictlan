@@ -25,7 +25,8 @@ from pathlib import Path
 
 from mictlan.analyzer import list_existing_aliases, list_existing_slugs
 from mictlan.paths import VAULT
-from mictlan.stagers.claude_code import classify_mode, count_actions, pre_grep_entities
+from mictlan.stagers._common import pre_grep_entities
+from mictlan.stagers.claude_code import classify_mode, count_actions
 
 PROJECTS_ROOT = Path.home() / ".cursor" / "projects"
 STAGING = VAULT / "_system" / "ingestion" / "staging" / "cursor-code"
@@ -109,8 +110,17 @@ def extract_assistant_text(message: dict) -> str:
     return text.strip()
 
 
-def iso_from_mtime(path: Path, use_ctime: bool = False) -> str:
-    ts = path.stat().st_ctime if use_ctime else path.stat().st_mtime
+def iso_from_mtime(path: Path, creation: bool = False) -> str:
+    """Best-effort session times: Cursor's JSONL events carry NO timestamps
+    ({message, role} only), so the filesystem is the only source available.
+
+    For creation, prefer st_birthtime (true creation time, macOS/APFS) over
+    st_ctime — ctime is metadata-change time and moves on chmod/re-copy/backup,
+    which produced wrong started_at dates. Falls back to mtime when the
+    filesystem doesn't track birth time.
+    """
+    st = path.stat()
+    ts = getattr(st, "st_birthtime", st.st_mtime) if creation else st.st_mtime
     return datetime.fromtimestamp(ts, tz=timezone.utc).isoformat()
 
 
@@ -173,8 +183,8 @@ def parse_session(path: Path, project_slug: str) -> dict | None:
     user_chars = sum(len(t["content"]) for t in turns if t["role"] == "user")
 
     title = next((t["content"][:120].replace("\n", " ") for t in turns if t["role"] == "user"), "")
-    started_at = iso_from_mtime(path, use_ctime=True)
-    ended_at = iso_from_mtime(path, use_ctime=False)
+    started_at = iso_from_mtime(path, creation=True)
+    ended_at = iso_from_mtime(path, creation=False)
 
     return {
         "source": "cursor-jsonl",

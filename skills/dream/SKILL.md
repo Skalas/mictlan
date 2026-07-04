@@ -103,9 +103,9 @@ uv run --project ~/github/skalas/mictlan --with playwright python -m mictlan.sta
 uv run --project ~/github/skalas/mictlan python -m mictlan.stagers.cursor --since "$SINCE" --limit 200
 ```
 
-Cursor sessions (`~/.cursor/projects/*/agent-transcripts/`) stage into `staging/cursor-code/` with source `cursor-jsonl`. Same downstream pipeline as Claude Code — pure parsing, no LLM calls or vault writes. The stager is idempotent against the same `processed.json` ledger.
+Cursor sessions (`~/.cursor/projects/*/agent-transcripts/`) stage into `staging/cursor-code/` with source `cursor-jsonl`. Same downstream pipeline as Claude Code — pure parsing, no LLM calls or vault writes. The stager is idempotent against the sharded ledger (`processed/<host>.json`, unioned with the legacy `processed.json`).
 
-The web side now uses `fetch_claude_web.py` — a Playwright + cookie-persisted scraper that pulls directly from claude.ai. No manual export needed. Cookies live at `_system/ingestion/.claude-web-cookies.json`; if they've expired the script exits non-zero and you must run a one-time interactive `--login` (interactive mode: prompt the user; headless: skip web and note `claude_web_login_required` in the dream journal).
+The web side now uses `fetch_claude_web.py` — a Playwright + cookie-persisted scraper that pulls directly from claude.ai. No manual export needed. Cookies live at `~/.mictlan/claude-web-cookies.json` (outside the synced vault, `0600`); if they've expired the script exits non-zero and you must run a one-time interactive `--login` (interactive mode: prompt the user; headless: skip web and note `claude_web_login_required` in the dream journal).
 
 The legacy export-based stager (`stage_claude_web.py --src <path>`) is still available for one-off backfills from a downloaded export, but it's no longer the default — fetch is.
 
