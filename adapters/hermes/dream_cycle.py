@@ -6,9 +6,14 @@ import re
 import tempfile
 from datetime import datetime, timedelta, timezone
 import httpx
+from pydantic import BaseModel, ValidationError
+
+from mictlan.paths import INBOX
+from mictlan.paths import VAULT as _VAULT  # single shared vault resolver (MICTLAN_VAULT)
+from mictlan.policy import load_policy
+from mictlan.schema import DreamProposal, SectionAppend, LinkProposal, NodeProposal, NoteType
 
 # Configuration
-from mictlan.paths import VAULT as _VAULT  # single shared vault resolver (MICTLAN_VAULT)
 
 DB_PATH = os.path.expanduser("~/.hermes/state.db")
 DAILY_DIR = str(_VAULT / "daily")
@@ -18,33 +23,22 @@ AUDIT_LOG_PATH = os.path.expanduser("~/.hermes/logs/dream_audit.json")
 GEMINI_MODEL = "gemini-3.5-flash"
 GEMINI_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 
-# --- 0. Policy Loading Gate (FAIL CLOSED) ---
-# Policy loader comes from the shared engine (requires `mictlan` installed here).
-try:
-    from mictlan.policy import load_policy
-    from mictlan.paths import INBOX
-    from mictlan.schema import DreamProposal, SectionAppend, LinkProposal, NodeProposal, NoteType
-    policy = load_policy()
-    policy_version = policy.version
-    heading_signature = policy._d["heading_signature"]
-    ingest_boundary_hermes = policy.boundary("Hermes") # usually ["~/.hermes/"]
-except Exception as e:
-    print(f"❌ FAIL CLOSED: Coexistence policy could not be loaded or parsed: {e}", file=sys.stderr)
-    # Log audit as failed
-    try:
-        os.makedirs(os.path.dirname(AUDIT_LOG_PATH), exist_ok=True)
-        with open(AUDIT_LOG_PATH, 'a') as f:
-            f.write(json.dumps({"date": datetime.now().strftime("%Y-%m-%d"), "status": f"failed: policy_unavailable ({e})"}) + "\n")
-    except Exception:
-        pass
-    sys.exit(1)
-
-# Ensure the boundary config makes sense for the run
-INGEST_ROOTS = [os.path.expanduser(p) for p in ingest_boundary_hermes] if ingest_boundary_hermes else [os.path.expanduser("~/.hermes/")]
+# The policy is loaded PER RUN inside run_dream_cycle(), never at import time:
+# Hermes' gateway is long-lived, and an import-time load would freeze the policy
+# (including its guardrail lists) until the next process restart.
+policy = None
+policy_version = None
 
 def load_keys_from_openclaw_env():
     env_path = os.path.expanduser("~/.openclaw/service-env/ai.openclaw.gateway.env")
     if os.path.exists(env_path):
+        mode = os.stat(env_path).st_mode & 0o077
+        if mode:
+            print(
+                f"⚠️ refusing to load {env_path}: group/world-accessible "
+                f"(chmod 600 it first)", file=sys.stderr,
+            )
+            return
         with open(env_path, 'r', encoding='utf-8') as f:
             for line in f:
                 line = line.strip()
@@ -312,9 +306,60 @@ Please review the proposed Daily Log. Filter out any redundant, low-signal, or g
 """
     return call_gemini(prompt)
 
+# --- Gemini output validation ---
+# The model's JSON is untrusted input: a partial or malformed response must fail
+# the run loudly at the gate, not KeyError deep inside note-writing code.
+
+class _InsightOut(BaseModel):
+    target_note: str = ""
+    insight: str = ""
+    evidence: str = ""
+    action: str = ""
+
+class _LinkOut(BaseModel):
+    note_a: str = ""
+    note_b: str = ""
+    evidence: str = ""
+    confidence: str = "low"
+
+class _NoteOut(BaseModel):
+    name: str = ""
+    slug: str = ""
+    type: str = "topic"
+
+class _ConsolidationOut(BaseModel):
+    resumen_operativo: str = ""
+    trabajo_tecnico: str = ""
+    negocios: str = ""
+    decisiones: str = ""
+    insights: list[_InsightOut] = []
+    proposed_links: list[_LinkOut] = []
+    proposed_notes: list[_NoteOut] = []
+
+def validate_consolidation(raw):
+    """Validate + normalize the checker's JSON. Raises ValueError when unusable.
+
+    Incomplete list items (a link missing an endpoint, a note missing name/slug)
+    are dropped rather than fatal — the rest of the day's output still lands.
+    """
+    if not isinstance(raw, dict):
+        raise ValueError(f"consolidator returned {type(raw).__name__}, expected JSON object")
+    try:
+        out = _ConsolidationOut.model_validate(raw)
+    except ValidationError as e:
+        raise ValueError(f"consolidator JSON failed validation: {e.error_count()} error(s)") from e
+    out.proposed_links = [lk for lk in out.proposed_links if lk.note_a and lk.note_b]
+    out.proposed_notes = [n for n in out.proposed_notes if n.name and n.slug]
+    return out.model_dump()
+
+
 def write_daily_log_to_vault(target_date, data):
     """
     Creates and writes the canonical Daily Log flat in the Obsidian Vault under daily/YYYY-MM-DD.md
+
+    NOTE: daily/ is a deliberate, documented exemption from the propose-only
+    contract — it's a Hermes-owned namespace (dated operational summaries, not
+    graph knowledge). Everything else goes through emit_proposal().
     """
     os.makedirs(DAILY_DIR, exist_ok=True)
     daily_file = os.path.join(DAILY_DIR, f"{target_date}.md")
@@ -497,10 +542,21 @@ def log_audit(target_date, status="success"):
         json.dump(entries, f, indent=4)
 
 def run_dream_cycle(target_date=None):
+    global policy, policy_version
     if not target_date:
         # Default to yesterday
         target_date = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
-        
+
+    # Policy Loading Gate (FAIL CLOSED) — fresh read every run so a version bump
+    # in the vault takes effect without restarting the gateway.
+    try:
+        policy = load_policy()
+        policy_version = policy.version
+    except Exception as e:
+        print(f"❌ FAIL CLOSED: Coexistence policy could not be loaded or parsed: {e}", file=sys.stderr)
+        log_audit(target_date, f"failed: policy_unavailable ({e})")
+        raise
+
     print(f"🌙 Starting Hermes dreaming/consolidation cycle (Policy v{policy_version}) for: {target_date}...")
     
     raw_msgs = get_messages_for_date(target_date)
@@ -523,8 +579,10 @@ def run_dream_cycle(target_date=None):
         draft_data = call_ai_consolidator(transcript, target_date)
         
         print("🔍 Checker Step: Auditing and refining the proposed Daily Log...")
-        data = verify_and_refine_consolidation(draft_data, transcript, target_date)
-        
+        data = validate_consolidation(
+            verify_and_refine_consolidation(draft_data, transcript, target_date)
+        )
+
         write_daily_log_to_vault(target_date, data)
         emit_proposal(target_date, data)
         log_audit(target_date, "success")
