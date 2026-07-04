@@ -4,7 +4,7 @@ import sqlite3
 import json
 import re
 import tempfile
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import httpx
 
 # Configuration
@@ -104,8 +104,10 @@ def get_messages_for_date(target_date):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
-    # Target date timestamps in UTC
-    start_dt = datetime.strptime(target_date, "%Y-%m-%d")
+    # Target date timestamps in UTC. The datetimes must be timezone-aware:
+    # .timestamp() on a naive datetime uses the host's LOCAL zone, shifting the
+    # day window by the UTC offset (and letting the laptop and mini disagree).
+    start_dt = datetime.strptime(target_date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
     end_dt = start_dt + timedelta(days=1)
     
     start_ts = start_dt.timestamp()
@@ -418,7 +420,10 @@ def emit_proposal(target_date, data):
             section_date=date_obj,
             content="\n\n".join(lines),
             source_marker=marker,
-            durable=True,
+            # Held for review: the same untrusted-transcript-driven LLM call that
+            # wrote this content cannot also vouch for its safety, so Hermes
+            # never self-declares durability (fail closed → approval gate).
+            durable=False,
             guardrail_hit=policy.is_guardrailed(note_name),
         ))
 

@@ -102,9 +102,9 @@ def test_marker_falls_back_to_agent_when_unparseable():
 
 def test_markerless_same_note_same_day_do_not_collide():
     a1 = SectionAppend(target_slug="goes", section_date=date(2026, 7, 3),
-                       content="first insight", source_marker="sig")
+                       content="first insight", source_marker="sig", durable=True)
     a2 = SectionAppend(target_slug="goes", section_date=date(2026, 7, 3),
-                       content="second insight", source_marker="sig")
+                       content="second insight", source_marker="sig", durable=True)
     prop = _envelope(appends=[a1, a2])
     applied, _ = bridge_safe_appends(prop, existing_slugs={"goes"}, is_guardrailed=_is_guardrailed)
     # distinct content → distinct idempotency keys → neither is silently dropped
