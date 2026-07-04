@@ -21,6 +21,7 @@ import json
 import sys
 from pathlib import Path
 
+import mictlan.ledger as _ledger
 from mictlan.analyzer import list_existing_aliases, list_existing_slugs
 
 from mictlan.paths import VAULT
@@ -127,14 +128,9 @@ def main() -> int:
     slugs = list_existing_slugs()
 
     # Skip conversations already in the ledger so we don't re-stage what the
-    # apply step (orchestrate_digest) just deleted.
-    ledger_path = VAULT / "_system" / "ingestion" / "processed.json"
-    ledger_keys: set[str] = set()
-    if ledger_path.exists():
-        try:
-            ledger_keys = set(json.loads(ledger_path.read_text(encoding="utf-8")).get("entries", {}).keys())
-        except Exception:
-            pass
+    # apply step (orchestrate_digest) just deleted. Union read (legacy +
+    # per-host shards) — new entries land only in shards, never processed.json.
+    ledger_keys: set[str] = _ledger.ledger_keys(VAULT)
 
     staged = 0
     skipped = 0
