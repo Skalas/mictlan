@@ -124,3 +124,43 @@ def test_drain_routes_nodes_to_review_without_search(tmp_path):
     res = drain(tmp_path, AGENTS, existing_slugs={"goes"}, is_guardrailed=_is_guardrailed, search=None)
     assert len(res.graph_update.appends) == 1
     assert res.backlog.review and not res.backlog.create  # never auto-create without dedup
+
+# ---------- drain lifecycle: archive + merge (T5) ----------
+
+
+def test_confirmed_drain_archives_processed_and_quarantines_rejected(tmp_path):
+    from mictlan.inbox import _archive_envelopes
+
+    good = tmp_path / "hermes-2026-07-03.json"
+    good.write_text(_envelope(appends=[_append("goes")]).model_dump_json(), encoding="utf-8")
+    bad = tmp_path / "rogue-2026-07-03.json"
+    bad.write_text("{not json", encoding="utf-8")
+
+    result = drain(tmp_path, AGENTS, existing_slugs={"goes"}, is_guardrailed=_is_guardrailed)
+    moved = _archive_envelopes(tmp_path, result)
+
+    assert moved == {"archived": 1, "rejected": 1}
+    assert (tmp_path / "archive" / good.name).exists() and not good.exists()
+    assert (tmp_path / "rejected" / bad.name).exists() and not bad.exists()
+    # next drain starts empty
+    rerun = drain(tmp_path, AGENTS, existing_slugs={"goes"}, is_guardrailed=_is_guardrailed)
+    assert not rerun.graph_update.appends and not rerun.errors
+
+
+def test_persist_review_merges_same_day_instead_of_clobbering(tmp_path):
+    from mictlan.inbox import _persist_review
+    from mictlan.inbox import DrainResult
+    from mictlan.analyzer import GraphUpdate
+
+    r1 = DrainResult(graph_update=GraphUpdate(), held=[_append("wedding", guardrail_hit=True)])
+    r2 = DrainResult(graph_update=GraphUpdate(), held=[_append("legal-case", guardrail_hit=True)])
+    _persist_review(tmp_path, "2026-07-03", r1)
+    _persist_review(tmp_path, "2026-07-03", r2)
+
+    payload = json.loads((tmp_path / "held-2026-07-03.json").read_text(encoding="utf-8"))
+    slugs = {a["target_slug"] for a in payload["held_appends"]}
+    assert slugs == {"wedding", "legal-case"}
+    # re-persisting the same result stays deduped
+    _persist_review(tmp_path, "2026-07-03", r2)
+    payload = json.loads((tmp_path / "held-2026-07-03.json").read_text(encoding="utf-8"))
+    assert len(payload["held_appends"]) == 2
