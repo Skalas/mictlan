@@ -1,0 +1,21 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.11"
+      - name: ruff
+        run: uv run --extra dev ruff check .
+      - name: mypy
+        run: uv run --extra dev mypy .
+      - name: pytest
+        run: uv run --extra dev pytest -q
