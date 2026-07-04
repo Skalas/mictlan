@@ -13,6 +13,7 @@ from pathlib import Path
 
 import yaml
 
+from mictlan.analyzer import write_if_changed
 from mictlan.paths import VAULT
 INDEX = VAULT / "_index"
 WIKILINK_RE = re.compile(r"\[\[([^\]|#]+?)(?:\|[^\]]+)?\]\]")
@@ -48,8 +49,9 @@ def load_note(path: Path) -> tuple[dict, str] | None:
 
 def write_note(path: Path, fm: dict, body: str) -> None:
     new = f"---\n{yaml.safe_dump(fm, sort_keys=False, allow_unicode=True).strip()}\n---\n{body}"
-    if path.read_text(encoding="utf-8") != new:
-        path.write_text(new, encoding="utf-8")
+    # Atomic tmp+replace (shared helper) — a crash or iCloud sync race during a
+    # plain write_text can truncate a real vault note.
+    write_if_changed(path, new)
 
 
 def all_notes() -> list[Path]:

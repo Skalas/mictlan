@@ -55,10 +55,17 @@ def test_safe_appends_excludes_guardrail_and_ephemeral():
     p = DreamProposal(
         agent="Hermes", target_date=date(2026, 6, 27), policy_version=1,
         appends=[
-            SectionAppend(target_slug="goes", section_date=date(2026, 6, 27), content="x", source_marker="## 2026-06-27 — Hermes"),
-            SectionAppend(target_slug="wedding", section_date=date(2026, 6, 27), content="y", source_marker="sig", guardrail_hit=True),
-            SectionAppend(target_slug="z", section_date=date(2026, 6, 27), content="z", source_marker="sig", durable=False),
+            SectionAppend(target_slug="goes", section_date=date(2026, 6, 27), content="x", source_marker="## 2026-06-27 — Hermes", durable=True),
+            SectionAppend(target_slug="wedding", section_date=date(2026, 6, 27), content="y", source_marker="sig", durable=True, guardrail_hit=True),
+            # durable defaults to False (fail closed): unmarked appends are never safe
+            SectionAppend(target_slug="z", section_date=date(2026, 6, 27), content="z", source_marker="sig"),
         ],
     )
     safe = p.safe_appends()
     assert [a.target_slug for a in safe] == ["goes"]
+
+
+def test_append_durability_defaults_to_fail_closed():
+    a = SectionAppend(target_slug="goes", section_date=date(2026, 6, 27),
+                      content="x", source_marker="sig")
+    assert a.durable is False

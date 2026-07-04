@@ -64,7 +64,9 @@ class SectionAppend(BaseModel):
     source_marker: str = Field(
         ..., description="e.g. <!-- src:claude-jsonl:abc123 --> or agent signature"
     )
-    durable: bool = True
+    # Fail closed: a producer must affirmatively mark an append durable to make
+    # it auto-apply-eligible; anything unmarked is held for human review.
+    durable: bool = False
     guardrail_hit: bool = False
 
 

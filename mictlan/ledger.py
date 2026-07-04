@@ -21,6 +21,7 @@ import json
 import os
 import re
 import socket
+import tempfile
 from pathlib import Path
 
 
@@ -79,7 +80,19 @@ def update_shard(vault: Path, new_entries: dict) -> None:
     p = current_shard_path(vault)
     existing = _read_entries(p)
     existing.update(new_entries)
-    p.write_text(
-        json.dumps({"version": 1, "entries": existing}, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
+    payload = json.dumps({"version": 1, "entries": existing}, indent=2, sort_keys=True) + "\n"
+    # Atomic write: a crash mid-write must never truncate the shard — a corrupt
+    # shard reads back as {} and silently erases this host's dedup history.
+    fd, tmp = tempfile.mkstemp(prefix=f".{p.name}.", suffix=".tmp", dir=str(sd))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(payload)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, p)
+    except Exception:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise

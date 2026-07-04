@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
 from datetime import datetime
@@ -24,6 +25,7 @@ from typing import Any
 from mictlan.analyzer import list_existing_aliases, list_existing_slugs
 from mictlan.stagers.claude_web import parse_conversation, pre_grep_entities
 
+import mictlan.ledger as _ledger
 from mictlan.paths import VAULT
 STAGING = VAULT / "_system" / "ingestion" / "staging" / "claude-web"
 COOKIE_PATH = VAULT / "_system" / "ingestion" / ".claude-web-cookies.json"
@@ -36,6 +38,8 @@ PAGE_SIZE = 20
 def save_cookies(cookies: list[dict]) -> None:
     COOKIE_PATH.parent.mkdir(parents=True, exist_ok=True)
     COOKIE_PATH.write_text(json.dumps(cookies, indent=2), encoding="utf-8")
+    # Live claude.ai session cookies: owner-only, never world-readable.
+    os.chmod(COOKIE_PATH, 0o600)
 
 
 def load_cookies() -> list[dict] | None:
@@ -249,9 +253,13 @@ def main() -> int:
 
     aliases = list_existing_aliases()
     slugs = list_existing_slugs()
+    # The apply step deletes staging files after consolidation, so the staging
+    # dir alone can't tell us what was already processed — the ledger can.
+    ledger_keys = _ledger.ledger_keys(VAULT)
 
     staged = 0
     skipped_exists = 0
+    skipped_ledgered = 0
     skipped_trivial = 0
     errors = 0
 
@@ -262,6 +270,9 @@ def main() -> int:
 
         if out_path.exists():
             skipped_exists += 1
+            continue
+        if f"claude-web:{conv_uuid.replace('-', '')[:8]}" in ledger_keys:
+            skipped_ledgered += 1
             continue
 
         try:
@@ -294,7 +305,10 @@ def main() -> int:
 
     client.close()
 
-    print(f"\nstaged={staged} skipped_exists={skipped_exists} skipped_trivial={skipped_trivial} errors={errors}")
+    print(
+        f"\nstaged={staged} skipped_exists={skipped_exists} "
+        f"skipped_ledgered={skipped_ledgered} skipped_trivial={skipped_trivial} errors={errors}"
+    )
     print(f"staging dir: {STAGING.relative_to(VAULT)}/")
     print(f"with entities: {len(aliases)}")
     return 0
