@@ -24,7 +24,7 @@ from pathlib import Path
 
 import yaml
 
-from mictlan.paths import VAULT
+from mictlan.paths import NOTE_FOLDERS, VAULT
 NOTES = VAULT / "notes"
 CONVERSATIONS = VAULT / "conversations"
 STATE_PATH = VAULT / "_system" / "ingestion" / "state.json"
@@ -155,11 +155,32 @@ def find_note(slug: str) -> Path | None:
     if not SLUG_RE.match(slug):
         return None
     vault_root = VAULT.resolve()
-    for folder in ("notes", "meetings", "daily", "conversations"):
+    for folder in NOTE_FOLDERS:
         p = (VAULT / folder / f"{slug}.md").resolve()
         if p.exists() and p.is_relative_to(vault_root):
             return p
     return None
+
+
+GARBAGE_WIKILINK_RE = re.compile(r"\[\[([^\]|]+)(?:\|([^\]]*))?\]\]")
+
+
+def sanitize_wikilinks(text: str) -> str:
+    """Unwrap [[targets]] that are not clean note slugs.
+
+    LLM output occasionally wraps code strings, paths, or prose in wikilink
+    brackets (e.g. [[vertex_utils.py::logger.error(...)]]). A target is only a
+    real link if it is a bare kebab slug; everything else is demoted to its
+    display text so garbage never lands in the graph.
+    """
+
+    def _fix(m: re.Match[str]) -> str:
+        target, display = m.group(1).strip(), m.group(2)
+        if SLUG_RE.match(target):
+            return m.group(0)
+        return (display or target).strip()
+
+    return GARBAGE_WIKILINK_RE.sub(_fix, text)
 
 
 def has_source_hash(body: str, source: str, source_id: str) -> bool:
@@ -209,7 +230,8 @@ def apply(update: GraphUpdate, today: str | None = None) -> ApplyReport:
         fm.setdefault("id", new.slug)
         fm.setdefault("created", today)
         fm.setdefault("updated", today)
-        content = serialize_note(fm, new.body if new.body.startswith("\n") else f"\n{new.body}")
+        body = sanitize_wikilinks(new.body)
+        content = serialize_note(fm, body if body.startswith("\n") else f"\n{body}")
         if write_if_changed(path, content):
             report.created.append(str(path.relative_to(VAULT)))
 
@@ -245,7 +267,7 @@ def _apply_append(app: Append, report: ApplyReport, today: str | None = None) ->
     if has_source_hash(body, app.source, app.source_id):
         report.skipped_idempotent.append(f"{app.target_slug}:{app.source_id}")
         return
-    new_body = append_dated_section(body, app.section_date, app.content, app.source, app.source_id, app.heading_slug)
+    new_body = append_dated_section(body, app.section_date, sanitize_wikilinks(app.content), app.source, app.source_id, app.heading_slug)
     fm["updated"] = today or app.section_date
     content = serialize_note(fm, new_body)
     if write_if_changed(target, content):
@@ -570,7 +592,7 @@ def bind_vault(vault: Path) -> None:
 def list_existing_slugs() -> set[str]:
     """All ids currently in the vault — used by ingesters to detect collisions."""
     out: set[str] = set()
-    for folder in ("notes", "meetings", "daily", "conversations"):
+    for folder in NOTE_FOLDERS:
         d = VAULT / folder
         if d.exists():
             for p in d.glob("*.md"):
