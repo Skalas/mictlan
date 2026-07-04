@@ -23,6 +23,7 @@ from pathlib import Path
 
 import mictlan.ledger as _ledger
 from mictlan.analyzer import list_existing_aliases, list_existing_slugs
+from mictlan.stagers._common import pre_grep_entities
 
 from mictlan.paths import VAULT
 STAGING = VAULT / "_system" / "ingestion" / "staging" / "claude-web"
@@ -71,36 +72,6 @@ def parse_conversation(c: dict) -> dict | None:
         "total_chars": total_chars,
         "turns": turns,
     }
-
-
-def pre_grep_entities(unit: dict, aliases: dict[str, str], slugs: set[str]) -> list[dict]:
-    import re
-    blob = "\n".join(t["content"] for t in unit["turns"]).lower()
-    counts: dict[str, int] = {}
-    surfaces: dict[str, set[str]] = {}
-
-    def count_surface(slug: str, surface: str) -> None:
-        pattern = r"\b" + re.escape(surface.lower()) + r"\b"
-        n = len(re.findall(pattern, blob))
-        if n > 0:
-            counts[slug] = counts.get(slug, 0) + n
-            surfaces.setdefault(slug, set()).add(surface)
-
-    for alias, slug in aliases.items():
-        if len(alias) < 4:
-            continue
-        count_surface(slug, alias)
-    for slug in slugs:
-        if len(slug) < 4:
-            continue
-        count_surface(slug, slug)
-        count_surface(slug, slug.replace("-", " "))
-
-    ranked = sorted(
-        ((s, n) for s, n in counts.items() if n >= 2),
-        key=lambda x: (-x[1], x[0]),
-    )[:25]
-    return [{"slug": s, "mentions": n, "surfaces": sorted(surfaces[s])} for s, n in ranked]
 
 
 def main() -> int:

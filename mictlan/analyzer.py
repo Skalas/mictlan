@@ -1,9 +1,9 @@
 """Shared ingest framework: dataclasses, idempotent apply path, state tracking.
 
-Source-specific ingesters (ingest_repos.py, ingest_claude_code.py, ...) build
-ConversationUnit / GraphUpdate objects and call apply(). The LLM analyzer
-function (analyze_with_llm) is plugged in later once an ANTHROPIC_API_KEY is
-available; ingesters that don't need an LLM (e.g. repos) construct GraphUpdate
+Source-specific stagers build ConversationUnit / GraphUpdate objects and call
+apply(). The prompt→JSON analysis step is done by an external LLM subagent
+(orchestrate.py never calls an LLM directly); its payload comes back through
+parse_proposal(). Ingesters that don't need an LLM construct GraphUpdate
 directly via heuristics.
 
 Conventions enforced here:
@@ -547,31 +547,6 @@ def parse_proposal(payload: dict, source: str, source_id: str) -> GraphUpdate:
         creates.append(NewNote(slug=slug, folder=folder, frontmatter=fm, body=body))
 
     return GraphUpdate(creates=creates, appends=appends)
-
-
-def analyze(
-    unit: ConversationUnit,
-    vault_context: dict,
-    dispatcher,
-) -> GraphUpdate:
-    """High-level entry: build prompt, call dispatcher, parse result.
-
-    `dispatcher` is a Callable[[str], dict] that takes the analysis prompt and
-    returns the parsed JSON payload from the LLM subagent. Caller is responsible
-    for picking a dispatch strategy (subprocess to `claude` CLI, Anthropic SDK,
-    test mock, etc.).
-    """
-    prompt = build_analysis_prompt(unit, vault_context)
-    payload = dispatcher(prompt)
-    return parse_proposal(payload, unit.source, unit.source_id)
-
-
-def analyze_with_llm(unit: ConversationUnit, vault_context: dict) -> GraphUpdate:
-    """Backwards-compatible alias. Raises NotImplementedError — supply a dispatcher
-    via `analyze()` directly."""
-    raise NotImplementedError(
-        "Use analyze(unit, vault_context, dispatcher) — supply a dispatcher callable."
-    )
 
 
 # ---------- Helpers for ingesters ----------
