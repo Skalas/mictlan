@@ -23,21 +23,28 @@ many source-specific dreamers   →   common proposal schema   →   one semanti
    fan-in of PROPOSALS, not of PROCESSING                          (node creation, with you)
 ```
 
-- **Appends** to an existing note are the only auto-applyable output (durable,
-  non-guardrailed, signed).
+- **Appends** to an existing note are the only auto-applyable output — and only
+  when the envelope affirmatively marks them `durable` (the schema default is
+  `False`: fail closed, held for human review).
 - **New nodes / links** are always **propose-only** → reconciled by the
   resolution gate → approved by a human once. Mictlán never auto-builds the graph.
+- **Exemption — `daily/`:** Hermes writes its own daily log
+  (`daily/<date>.md`) directly. It's a Hermes-owned namespace of dated
+  operational summaries, not graph knowledge, so it sits deliberately outside
+  the single-writer contract. Everything else from Hermes goes through the sink.
 
 ## Architecture: engine vs adapter (à la `metate`)
 
 ```
 mictlan/                 the engine — generic, installed once
-├─ policy.py               load + sign the coexistence policy (fail-closed)
+├─ paths.py                single source of vault path resolution (MICTLAN_VAULT)
+├─ policy.py               load the coexistence policy (fail-closed) + attribution headings
 ├─ ledger.py               sharded dedup ledger (per-host, union reads)
-├─ schema.py        ★NEW   the common proposal envelope every dreamer emits
-├─ proposals.py     ★NEW   semantic entity-resolution + approval-gate backlog
-├─ triage.py              durable / ephemeral / uncertain
-├─ analyzer.py            digest prompt branching on session mode
+├─ schema.py               the common proposal envelope every dreamer emits
+├─ proposals.py            semantic entity-resolution + approval-gate backlog
+├─ inbox.py                drain the sink: validate, bridge safe appends, archive
+├─ triage.py              standalone tag-cluster report over conversations/ (not in the pipeline)
+├─ analyzer.py            vault I/O + idempotent apply path + digest prompts
 ├─ orchestrate.py        prepare / apply proposals
 ├─ lint.py               proposal lint (wikilink resolvability, dating)
 ├─ pending.py            aggregate still-pending proposals across journals
@@ -120,6 +127,7 @@ make test             # uv run --extra dev pytest
 ## Status
 
 v0.2 — single-consolidator cutover landed: Hermes emits `DreamProposal` envelopes
-to the sink (Claude Code `/dream` is the sole vault writer), the duplicate vault
-policy loader is deleted, and OpenClaw/Nico is retired. The graph reprocess (ADR
-0002) and CI remain gated follow-ups — see the ADR and issue #1.
+to the sink (Claude Code `/dream` is the sole vault writer, with the documented
+`daily/` exemption above), the duplicate vault policy loader is deleted, and
+OpenClaw/Nico is retired. The graph reprocess is a gated follow-up, tracked in
+ADR 0001's follow-ups section (ADR 0002 to be written when it's picked up).
