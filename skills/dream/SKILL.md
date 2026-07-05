@@ -282,6 +282,25 @@ all journal history, not just tonight's — so you approve it all in one place.
 Record the outcome in the journal (Step 7) under a new `## Backlog review`
 section: how many were pending, and the create/fold/reject/defer disposition of each.
 
+## Step 6.6: Graph health check (compaction + hygiene trigger)
+
+The reindex pass (Step 4/8) regenerates `_index/health.md` — the graph's own
+dashboard. Read it and act on two signals:
+
+1. **Compaction candidates** (notes with ≥10 dated appends): the graph is
+   telling you a note has stopped compounding and started silting.
+   - *Interactive*: offer to compact the top candidate now — rewrite it into
+     the article shape (`## Estado actual` → `## Decisiones` → thematic →
+     `## Historia` → `## Fuentes`), preserving EVERY `<!-- src:… -->` marker
+     (collect them under `## Fuentes`; idempotency depends on them — verify
+     the marker set survived before writing). One note per dream, max.
+   - *Headless*: never compact. List the candidates in the journal under
+     `## Graph health` so the morning review sees them.
+2. **Orphans / stale actives**: copy the health summary line
+   (`N concept notes · N orphans · N compaction candidates · N stale active projects`)
+   into the journal's `## Summary`. If orphans grew vs. yesterday's journal,
+   flag it — new notes are being created without wiring.
+
 ## Step 7: Write the dream journal
 
 Write to `dreams/<YYYY-MM-DD>.md` (create the `dreams/` folder if it doesn't exist). Use the Write tool directly — the brain MCP doesn't yet have a `dream` kind.
@@ -306,6 +325,12 @@ mode: interactive | headless
 - Auto-applied appends: <N>
 - Held for review: <N>
 - Errors: <N>
+- Graph health: <summary line from _index/health.md>
+
+## Graph health
+- Compaction candidates: [[<slug>]] (<N> appends), … — or "none"
+- Compacted this run: [[<slug>]] (interactive only) — or "none"
+- Orphan delta vs. previous journal: <+N/-N/0>
 
 ## Auto-applied
 For each safe proposal that was applied:
