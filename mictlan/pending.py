@@ -26,6 +26,12 @@ DREAMS_DIR = os.path.join(VAULT, "dreams")
 
 SECTION_HEADERS = ("Held for review", "Proposed new note stubs")
 
+# A journal "## Backlog review" line records a human disposition. Any slug with
+# a terminal disposition (folded / rejected / created) is settled — drop it from
+# the pending backlog forever. "deferred" keeps it pending on purpose.
+DISPOSITION_PATTERN = re.compile(
+    r"`([a-z0-9][a-z0-9-]+)`.*?→\s*(created|folded|rejected)", re.I)
+
 # slug-bearing patterns inside a proposal line
 SLUG_PATTERNS = [
     re.compile(r"would create \[\[([a-z0-9][a-z0-9-]+)\]\]", re.I),
@@ -73,6 +79,15 @@ def main():
     slugs, dehyph = existing_slugs()
     pending = {}  # slug -> {type, times_seen, first_seen, last_seen}
 
+    # First pass: collect settled dispositions across the full journal history
+    # (never --since-scoped — a decision made last month still stands today).
+    settled = set()
+    for jpath in sorted(glob.glob(os.path.join(DREAMS_DIR, "*.md"))):
+        text = open(jpath, errors="ignore").read()
+        sec = extract_section(text, "Backlog review")
+        for slug, _ in DISPOSITION_PATTERN.findall(sec):
+            settled.add(slug.lower())
+
     for jpath in sorted(glob.glob(os.path.join(DREAMS_DIR, "*.md"))):
         date = os.path.basename(jpath)[:-3]
         if args.since and date < args.since:
@@ -84,7 +99,7 @@ def main():
                 for pat in SLUG_PATTERNS:
                     for slug in pat.findall(line):
                         s = slug.lower()
-                        if s in NOISE or is_covered(s, slugs, dehyph):
+                        if s in NOISE or s in settled or is_covered(s, slugs, dehyph):
                             continue
                         tm = TYPE_PATTERN.search(line)
                         rec = pending.setdefault(

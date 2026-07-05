@@ -131,3 +131,33 @@ def test_health_report_flags_orphans_piles_and_stale(tmp_path, monkeypatch):
     assert "[[pile]] — 11 appends" in out
     assert "[[stale-proj]] — last touched 2026-03-01" in out
     assert "book-dune" not in out
+
+
+# ---------- pending: settled dispositions stay settled ----------
+
+def test_pending_drops_slugs_with_journal_disposition(tmp_path, monkeypatch, capsys):
+    import sys
+    import mictlan.pending as pending
+    (tmp_path / "notes").mkdir()
+    dreams = tmp_path / "dreams"
+    dreams.mkdir()
+    (dreams / "2026-06-10.md").write_text(
+        "## Proposed new note stubs\n"
+        '- "Cafe Escalante" — seen 2 times\n'
+        "  - Suggested slug: `cafe-escalante`\n"
+        "  - Suggested type: project\n"
+        "- \"Sampler\" — seen 3 times\n"
+        "  - Suggested slug: `sampler-x`\n",
+        encoding="utf-8")
+    (dreams / "2026-07-04.md").write_text(
+        "## Backlog review\n"
+        "- `cafe-escalante` (seen 2× since 2026-06-06) → folded into [[orbis-bos]]\n",
+        encoding="utf-8")
+    monkeypatch.setattr(pending, "NOTES_DIR", str(tmp_path / "notes"))
+    monkeypatch.setattr(pending, "DREAMS_DIR", str(dreams))
+    monkeypatch.setattr(sys, "argv", ["pending"])
+    pending.main()
+    import json as _json
+    out = _json.loads(capsys.readouterr().out)
+    slugs = {p["slug"] for p in out["pending"]}
+    assert "cafe-escalante" not in slugs and "sampler-x" in slugs
