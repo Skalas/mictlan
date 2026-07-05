@@ -22,6 +22,13 @@ BRAIN_MCP_DIR = pathlib.Path(os.environ.get("MICTLAN_BRAIN_MCP", DEFAULT_BRAIN_M
 
 NOTES = VAULT / "notes"
 CONVERSATIONS = VAULT / "conversations"
+
+# Shelf folders: catalog notes (kind: book/recipe/task/delegated_task) live here,
+# outside the concept graph's notes/ home but still indexed and link-resolvable.
+# Keep in sync with brain_mcp.vault.SHELF_DIRS.
+SHELF_FOLDERS = ("library/books", "library/recipes", "gtd/tasks", "gtd/delegated")
+# Every folder whose *.md stems are valid wikilink targets for the engine.
+NOTE_FOLDERS = ("notes", "meetings", "daily", "conversations", *SHELF_FOLDERS)
 DREAMS = VAULT / "dreams"
 DAILY = VAULT / "daily"
 INDEX = VAULT / "_index"

@@ -9,13 +9,24 @@ from __future__ import annotations
 import re
 import sys
 from collections import Counter, defaultdict
+from datetime import date
 from pathlib import Path
 
 import yaml
 
 from mictlan.analyzer import write_if_changed
-from mictlan.paths import VAULT
+from mictlan.paths import NOTE_FOLDERS, VAULT
 INDEX = VAULT / "_index"
+
+# Projects with no activity for this many days stop rendering as Active.
+STALE_AFTER_DAYS = 30
+# Notes with at least this many dated append sections are compaction candidates.
+COMPACTION_APPEND_THRESHOLD = 10
+DATED_SECTION_RE = re.compile(r"^#{2,3} \d{4}-\d{2}-\d{2}", re.MULTILINE)
+# Catalog kinds live on shelves and are indexed in library.md / gtd.md,
+# not in the concept MOCs.
+LIBRARY_KINDS = ("book", "recipe")
+GTD_KINDS = ("task", "delegated_task")
 WIKILINK_RE = re.compile(r"\[\[([^\]|#]+?)(?:\|[^\]]+)?\]\]")
 FRONTMATTER_RE = re.compile(r"^---\n(.*?)\n---\n(.*)$", re.DOTALL)
 VALID_SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
@@ -56,7 +67,7 @@ def write_note(path: Path, fm: dict, body: str) -> None:
 
 def all_notes() -> list[Path]:
     out: list[Path] = []
-    for folder in ("notes", "meetings", "daily", "conversations"):
+    for folder in NOTE_FOLDERS:
         d = VAULT / folder
         if d.exists():
             out.extend(sorted(d.glob("*.md")))
@@ -120,18 +131,40 @@ def render_people(notes: list[dict]) -> str:
     return "\n".join(out) + "\n"
 
 
-def render_projects(notes: list[dict]) -> str:
+def _days_since_update(n: dict, today: date) -> int | None:
+    raw = str(n.get("updated") or "")[:10]
+    try:
+        return (today - date.fromisoformat(raw)).days
+    except ValueError:
+        return None
+
+
+def render_projects(notes: list[dict], today: date | None = None) -> str:
+    today = today or date.today()
     rows = [n for n in notes if n.get("type") == "project"]
     if not rows:
         return MOC_HEADER + "# Projects\n\n_No entries yet._\n"
     by_status: dict[str, list[dict]] = defaultdict(list)
     for n in rows:
-        by_status[n.get("status", "active")].append(n)
+        status = n.get("status", "active")
+        # Honesty over frontmatter: an "active" project nobody touched for
+        # STALE_AFTER_DAYS renders as stale instead of silently padding Active.
+        if status == "active":
+            age = _days_since_update(n, today)
+            if age is not None and age > STALE_AFTER_DAYS:
+                status = "stale"
+        by_status[status].append(n)
     out = [MOC_HEADER, "# Projects\n"]
-    for status in ("active", "dormant", "archived"):
+    titles = {"stale": f"Stale (no activity in {STALE_AFTER_DAYS}+ days)"}
+    for status in ("active", "stale", "dormant", "archived"):
         if status not in by_status:
             continue
-        out.append(f"\n## {status.title()}\n")
+        out.append(f"\n## {titles.get(status, status.title())}\n")
+        if status == "stale":
+            bucket = sorted(by_status[status], key=lambda x: str(x.get("updated") or ""), reverse=True)
+            for n in bucket:
+                out.append(f"- [[{n['id']}]] — {n.get('org') or ''} (last touched {str(n.get('updated') or '?')[:10]})")
+            continue
         for n in sorted(by_status[status], key=lambda x: str(x.get("start") or ""), reverse=True):
             org = n.get("org") or ""
             start = n.get("start") or ""
@@ -141,7 +174,10 @@ def render_projects(notes: list[dict]) -> str:
 
 
 def render_topics(notes: list[dict]) -> str:
-    rows = sorted([n for n in notes if n.get("type") in ("topic", "ref")], key=lambda n: n["id"])
+    rows = sorted(
+        [n for n in notes if n.get("type") in ("topic", "ref") and not n.get("kind")],
+        key=lambda n: n["id"],
+    )
     if not rows:
         return MOC_HEADER + "# Topics & references\n\n_No entries yet._\n"
     lines = [MOC_HEADER, "# Topics & references\n"]
@@ -175,6 +211,93 @@ def render_timeline(notes: list[dict]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _kind_rows(notes: list[dict], kinds: tuple[str, ...]) -> dict[str, list[dict]]:
+    by_kind: dict[str, list[dict]] = defaultdict(list)
+    for n in notes:
+        if n.get("kind") in kinds:
+            by_kind[n["kind"]].append(n)
+    return by_kind
+
+
+def render_library(notes: list[dict]) -> str:
+    by_kind = _kind_rows(notes, LIBRARY_KINDS)
+    if not by_kind:
+        return MOC_HEADER + "# Library\n\n_No entries yet._\n"
+    out = [MOC_HEADER, "# Library\n"]
+    for kind in LIBRARY_KINDS:
+        rows = sorted(by_kind.get(kind, []), key=lambda n: n["id"])
+        if not rows:
+            continue
+        out.append(f"\n## {kind.title()}s ({len(rows)})\n")
+        for n in rows:
+            status = n.get("status") or ""
+            out.append(f"- [[{n['id']}]]{f' — {status}' if status else ''}")
+    return "\n".join(out) + "\n"
+
+
+def render_gtd(notes: list[dict]) -> str:
+    by_kind = _kind_rows(notes, GTD_KINDS)
+    if not by_kind:
+        return MOC_HEADER + "# GTD\n\n_No entries yet._\n"
+    out = [MOC_HEADER, "# GTD\n"]
+    for kind in GTD_KINDS:
+        rows = by_kind.get(kind, [])
+        if not rows:
+            continue
+        open_rows = sorted([n for n in rows if n.get("status") not in ("done", "archived")], key=lambda n: n["id"])
+        closed = len(rows) - len(open_rows)
+        title = "Tasks" if kind == "task" else "Delegated"
+        out.append(f"\n## {title} — {len(open_rows)} open, {closed} closed\n")
+        for n in open_rows:
+            out.append(f"- [[{n['id']}]]")
+    return "\n".join(out) + "\n"
+
+
+def render_health(notes: list[dict], outgoing: dict[str, set[str]], today: date | None = None) -> str:
+    """The graph's own dashboard: orphans, compaction candidates, stale actives."""
+    today = today or date.today()
+    concept = {
+        n["id"]: n for n in notes
+        if n.get("type") in ("project", "topic", "ref", "person", "org")
+        and not n.get("kind") and n.get("status") != "archived"
+    }
+    incoming: Counter[str] = Counter()
+    for src, targets in outgoing.items():
+        for t in targets:
+            incoming[t] += 1
+    orphans = sorted(
+        s for s in concept
+        if not outgoing.get(s) and incoming[s] == 0
+    )
+    piles: list[tuple[int, str]] = []
+    for p in all_notes():
+        if p.parent.name != "notes":
+            continue
+        loaded = load_note(p)
+        if not loaded:
+            continue
+        n_appends = len(DATED_SECTION_RE.findall(loaded[1]))
+        if n_appends >= COMPACTION_APPEND_THRESHOLD:
+            piles.append((n_appends, p.stem))
+    piles.sort(reverse=True)
+    stale = sorted(
+        (s for s, n in concept.items()
+         if n.get("type") == "project" and n.get("status", "active") == "active"
+         and (_days_since_update(n, today) or 0) > STALE_AFTER_DAYS),
+        key=lambda s: str(concept[s].get("updated") or ""),
+    )
+    out = [MOC_HEADER, "# Graph health\n"]
+    out.append(f"\n_{len(concept)} concept notes · {len(orphans)} orphans · "
+               f"{len(piles)} compaction candidates · {len(stale)} stale active projects_\n")
+    out.append(f"\n## Orphans ({len(orphans)}) — no links in or out\n")
+    out.extend(f"- [[{s}]]" for s in orphans)
+    out.append(f"\n## Compaction candidates ({len(piles)}) — ≥{COMPACTION_APPEND_THRESHOLD} dated appends\n")
+    out.extend(f"- [[{s}]] — {c} appends" for c, s in piles)
+    out.append(f"\n## Stale active projects ({len(stale)})\n")
+    out.extend(f"- [[{s}]] — last touched {str(concept[s].get('updated') or '?')[:10]}" for s in stale)
+    return "\n".join(out) + "\n"
+
+
 def render_tags(notes: list[dict]) -> str:
     counter: Counter[str] = Counter()
     files_by_tag: dict[str, list[str]] = defaultdict(list)
@@ -192,13 +315,16 @@ def render_tags(notes: list[dict]) -> str:
 
 
 def main() -> int:
-    sync_links()
+    outgoing = sync_links()
     notes = collect()
     (INDEX / "people.md").write_text(render_people(notes), encoding="utf-8")
     (INDEX / "projects.md").write_text(render_projects(notes), encoding="utf-8")
     (INDEX / "topics.md").write_text(render_topics(notes), encoding="utf-8")
     (INDEX / "timeline.md").write_text(render_timeline(notes), encoding="utf-8")
     (INDEX / "tags.md").write_text(render_tags(notes), encoding="utf-8")
+    (INDEX / "library.md").write_text(render_library(notes), encoding="utf-8")
+    (INDEX / "gtd.md").write_text(render_gtd(notes), encoding="utf-8")
+    (INDEX / "health.md").write_text(render_health(notes, outgoing), encoding="utf-8")
     print(f"reindexed {len(notes)} notes")
     return 0
 
