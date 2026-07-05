@@ -71,7 +71,10 @@ def call_gemini(prompt):
         "contents": [{"parts": [{"text": prompt}]}],
         "generationConfig": {"response_mime_type": "application/json"},
     }
-    r = httpx.post(url, headers=headers, json=payload, timeout=120.0)
+    # Force IPv4: the Mac Mini's network stalls on IPv6 to the Gemini endpoint.
+    transport = httpx.HTTPTransport(local_address="0.0.0.0")
+    with httpx.Client(transport=transport) as client:
+        r = client.post(url, headers=headers, json=payload, timeout=120.0)
     r.raise_for_status()
     resp_data = r.json()
     try:
