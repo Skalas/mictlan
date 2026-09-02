@@ -24,3 +24,7 @@ proposed/
 .cursor/rules/codebase-memory.mdc
 # metate reviewer agents are installed tooling (source: metate repo)
 .cursor/agents/metate-*.md
+# metate DoD ledger (per-sprint; start overwrites)
+.metate/dod.json
+# metate autonomous implementer permission (personal, per-developer)
+.claude/settings.local.json
