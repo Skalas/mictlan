@@ -61,7 +61,7 @@ docs/adr/                  decision records
 tests/
 ```
 
-**One model across all dreamers:** `gemini-3.5-flash`, used exclusively by Hermes
+**One model across all dreamers:** `gemini-3.8-flash`, used exclusively by Hermes
 and Claude Code. (OpenClaw/Nico was retired 2026-06-27; the fleet is now those two.)
 
 ## Governance stays in the vault

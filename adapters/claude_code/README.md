@@ -8,4 +8,4 @@ and Cursor JSONL. Runs on the laptop via the `/dream` skill
   dreamer.
 - Hosts the **single cross-agent human-approval gate** (`/dream` Step 6.5): the
   one place new nodes are created, after the resolution gate dedups them.
-- Model: `gemini-3.5-flash` (sub-agent digests).
+- Model: `gemini-3.8-flash` (sub-agent digests).

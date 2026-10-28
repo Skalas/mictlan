@@ -69,7 +69,7 @@ approval gate (policy §5) — `mictlan` does NOT adopt auto-graph construction.
 
 The vault keeps governance docs (policy/doctrine/architecture) as SSOT; the
 engine *reads* them via brain-MCP. Single model across all dreamers:
-`gemini-3.5-flash` (OpenClaw may fall back to other models only on failure).
+`gemini-3.8-flash` (OpenClaw may fall back to other models only on failure).
 
 ## What moves where (cutover — staged, after repo validation)
 

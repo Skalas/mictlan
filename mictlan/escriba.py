@@ -33,7 +33,7 @@ from mictlan.paths import ESCRIBA_EXPORT_DIR, VAULT
 
 LLMCaller = Callable[[str], Any]
 
-GEMINI_MODEL = "gemini-3.5-flash"
+GEMINI_MODEL = "gemini-3.8-flash"
 GEMINI_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 GEMINI_TIMEOUT_SECONDS = 120.0
 API_KEY_ENV_VARS = ("GOOGLE_API_KEY", "GEMINI_API_KEY")

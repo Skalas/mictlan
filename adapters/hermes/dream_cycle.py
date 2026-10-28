@@ -21,7 +21,11 @@ DAILY_DIR = str(_VAULT / "daily")
 AUDIT_LOG_PATH = os.path.expanduser("~/.hermes/logs/dream_audit.json")
 
 # Single model for the consolidation fleet.
-GEMINI_MODEL = "gemini-3.5-flash"
+GEMINI_MODEL = "gemini-3.8-flash"
+MAX_TRANSCRIPT_CHARS = 800_000
+TRANSCRIPT_HEAD_CHARS = 250_000
+TRANSCRIPT_TAIL_CHARS = 550_000
+TRANSCRIPT_TRUNCATION_MARKER = "\n\n... [MIDDLE OF TRANSCRIPT TRUNCATED TO FIT CONTEXT LIMIT] ...\n\n"
 GEMINI_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 
 # The policy is loaded PER RUN inside run_dream_cycle(), never at import time:
@@ -259,7 +263,14 @@ def clean_messages(raw_messages):
                 
             cleaned_transcript.append(f"Tool Execute ({tool_name}): {content_preview}")
             
-    return "\n\n".join(cleaned_transcript)
+    transcript = "\n\n".join(cleaned_transcript)
+    if len(transcript) > MAX_TRANSCRIPT_CHARS:
+        return (
+            transcript[:TRANSCRIPT_HEAD_CHARS]
+            + TRANSCRIPT_TRUNCATION_MARKER
+            + transcript[-TRANSCRIPT_TAIL_CHARS:]
+        )
+    return transcript
 
 def call_ai_consolidator(transcript, target_date):
     """
