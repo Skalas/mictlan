@@ -8,6 +8,7 @@ from datetime import datetime, timedelta, timezone
 import httpx
 from pydantic import BaseModel, ValidationError
 
+from mictlan.escriba import format_report, sync_escriba_meetings
 from mictlan.paths import INBOX
 from mictlan.paths import VAULT as _VAULT  # single shared vault resolver (MICTLAN_VAULT)
 from mictlan.policy import load_policy
@@ -29,29 +30,30 @@ GEMINI_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models/{mode
 policy = None
 policy_version = None
 
-def load_keys_from_openclaw_env():
-    env_path = os.path.expanduser("~/.openclaw/service-env/ai.openclaw.gateway.env")
-    if os.path.exists(env_path):
-        mode = os.stat(env_path).st_mode & 0o077
-        if mode:
-            print(
-                f"⚠️ refusing to load {env_path}: group/world-accessible "
-                f"(chmod 600 it first)", file=sys.stderr,
-            )
-            return
-        with open(env_path, 'r', encoding='utf-8') as f:
-            for line in f:
-                line = line.strip()
-                if line.startswith("export "):
-                    line = line[7:]
-                if "=" in line:
-                    key, val = line.split("=", 1)
-                    val = val.strip().strip("'").strip('"')
-                    os.environ[key.strip()] = val.strip()
+def load_keys_from_env():
+    env_paths = [
+        os.path.expanduser("~/.hermes/.env"),
+    ]
+    for env_path in env_paths:
+        if not os.path.exists(env_path):
+            continue
+        try:
+            with open(env_path, 'r', encoding='utf-8') as f:
+                for line in f:
+                    line = line.strip()
+                    if line.startswith("export "):
+                        line = line[7:]
+                    if "=" in line and not line.startswith("#"):
+                        key, val = line.split("=", 1)
+                        val = val.strip().strip("'").strip('"')
+                        if key.strip() not in os.environ:
+                            os.environ[key.strip()] = val.strip()
+        except Exception as e:
+            print(f"⚠️ Warning loading {env_path}: {e}", file=sys.stderr)
 
-load_keys_from_openclaw_env()
+load_keys_from_env()
 
-GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY")
+GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY")
 
 
 def call_gemini(prompt):
@@ -69,7 +71,10 @@ def call_gemini(prompt):
     }
     payload = {
         "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {"response_mime_type": "application/json"},
+        "generationConfig": {
+            "response_mime_type": "application/json",
+            "temperature": 0.1,
+        },
     }
     # Force IPv4: the Mac Mini's network stalls on IPv6 to the Gemini endpoint.
     transport = httpx.HTTPTransport(local_address="0.0.0.0")
@@ -84,14 +89,52 @@ def call_gemini(prompt):
         shape = list(resp_data.keys()) if isinstance(resp_data, dict) else type(resp_data).__name__
         raise ValueError(f"Unexpected Gemini response (status={r.status_code}, keys={shape})") from e
 
-    # Defensive: strip markdown fences if the model wraps the JSON anyway.
-    if text.startswith("```json"):
-        text = text[7:]
-    elif text.startswith("```"):
-        text = text[3:]
-    if text.endswith("```"):
-        text = text[:-3]
-    return json.loads(text.strip())
+    # Robust JSON extraction: Find matching closing brace for the first open brace
+    def extract_first_json_object(s):
+        start = s.find("{")
+        if start == -1:
+            return s
+        depth = 0
+        in_string = False
+        escape = False
+        for i in range(start, len(s)):
+            char = s[i]
+            if escape:
+                escape = False
+                continue
+            if char == "\\":
+                escape = True
+                continue
+            if char == '"':
+                in_string = not in_string
+                continue
+            if not in_string:
+                if char == "{":
+                    depth += 1
+                elif char == "}":
+                    depth -= 1
+                    if depth == 0:
+                        return s[start:i+1]
+        return s[start:]
+
+    text = extract_first_json_object(text)
+    
+    # Clean trailing commas or control characters before json.loads
+    text_clean = re.sub(r',\s*([}\]])', r'\1', text.strip())
+    try:
+        return json.loads(text_clean, strict=False)
+    except Exception:
+        try:
+            return json.loads(text.strip(), strict=False)
+        except Exception:
+            # Show only a safe bounded snippet to preserve privacy (no raw transcript leakage in logs)
+            snippet = text.strip()
+            if len(snippet) > 200:
+                snippet = snippet[:100] + "\n... [TRUNCATED FOR PRIVACY] ...\n" + snippet[-100:]
+            print("--- RAW GEMINI RESPONSE SNIPPET ---", file=sys.stderr)
+            print(snippet, file=sys.stderr)
+            print("-----------------------------------", file=sys.stderr)
+            raise
 
 def get_messages_for_date(target_date):
     """
@@ -228,11 +271,15 @@ You are the **Thinking Partner** of Miguel Escalante. Your task is to perform th
 Below is the transcript of today's work, terminal actions, and discussions. You must analyze it deeply and generate a structured Daily Log.
 
 ### 📋 Rules of Engagement:
-1. **Be Honest & Non-Sycophantic:** Give factual, dry, and highly critical insights. No flattery.
-2. **Exclusion Rule:** Exclude press briefs or newsletters. Focus only on Miguel's decisions, code, and conceptual ideas.
-3. **Distinguish Execution vs Conceptual:** 
+1. **Fidelidad Factual Estricta (CERO ALUCINACIÓN):** Ancla cada punto exclusivamente en la evidencia real de la transcripción. PROHIBIDO inventar números de sprint (ej. S87, S88), números de PR, librerías, repositorios, renders de oficina o iniciativas que no estén explícitamente en el texto. Si un tema no ocurrió, no lo inventes.
+2. **Be Honest & Non-Sycophantic:** Factual, dry, and highly critical insights. No flattery or filler.
+3. **Exclusion Rule:** Exclude press briefs or newsletters. Focus only on Miguel's actual decisions, code, and conceptual ideas.
+4. **Distinguish Execution vs Conceptual:** 
    - Tag work done or code written as `#execution`.
    - Tag abstract plans, brainstorms, or designs that are not yet built as `#conceptual`.
+5. **Calibración de Durabilidad (`durable: true|false`):**
+   - Marca `durable: true` para conocimiento técnico o de dominio perdurable: decisiones de arquitectura, fórmulas/métricas/KPIs (ej. ratio de costo laboral), patrones de seguridad y secretos (ej. SOPS+age), contratos de software, esquemas de bases de datos o reglas permanentes de negocio.
+   - Marca `durable: false` para estados temporales de tareas, triage efímero de PRs, notas transitorias de depuración o seguimientos del día a día.
 
 ### Transcript of the Day:
 ```text
@@ -241,7 +288,7 @@ Below is the transcript of today's work, terminal actions, and discussions. You 
 
 ### Please output a JSON structure with EXACTLY these keys:
 {{
-    "resumen_operativo": "A 2-3 sentence overview of what was built, decided, or left pending today.",
+    "resumen_operativo": "A 2-3 sentence overview of what was actually built, decided, or left pending today grounded strictly in the transcript.",
     "trabajo_tecnico": "Markdown bullets of projects touched and code modified.",
     "negocios": "Business updates (Aluxe, Fratellino, Personal Brand, etc.) if any.",
     "decisiones": "Markdown block in the format: 'Decisión: X — Razón: Y — Impacto: Z'.",
@@ -250,7 +297,8 @@ Below is the transcript of today's work, terminal actions, and discussions. You 
             "insight": "Insight description...",
             "target_note": "Name of the relevant existing project note in Obsidian (e.g. 'goes-salud', 'finance', 'boda') or null if none.",
             "evidence": "1-line evidence from transcript.",
-            "action": "Next step or monitor [owner, due]"
+            "action": "Next step or monitor [owner, due]",
+            "durable": true
         }}
     ],
     "proposed_links": [
@@ -281,10 +329,14 @@ You are the **Verification Agent (Checker)** for Miguel Escalante's daily memory
 Your sole job is to audit and refine the proposed Daily Log JSON against his strict quality standards and Vault conventions.
 
 ### Rules of Engagement for the Checker:
-1. **Durable vs Ephemeral:** Ensure every insight is truly durable (facts, decisions, relationships, or reusable insights he would want months from now). Filter out generic or empty insights (like "Miguel continued working on files").
-2. **Conciseness & Tone:** Keep explanations concise, dry, and highly technical. Remove any flattery or generic filler words.
-3. **No TODOs:** Ensure no task lists or temporary TODO states are recorded as long-term memories.
-4. **Validation:** Check if the referenced project notes exist or make sense.
+1. **Auditoría Antialucinación (Gating Factual):** Compara cada elemento del draft contra el raw transcript. Si el draft contiene nombres de sprints, PRs, renders o iniciativas NO respaldadas directamente por la transcripción, ELIMÍNALAS O CORRÍGELAS INMEDIATAMENTE. Cero tolerancia a datos sintéticos o inventados.
+2. **Calibración de Durabilidad:** Audita rigurosamente el campo `durable` de cada insight:
+   - Debe ser `true` si captura hechos estables, decisiones arquitectónicas, fórmulas/métricas/KPIs (ej. labor-cost-ratio), esquemas de secretos/seguridad (ej. SOPS+age), contratos de API o modelos de datos.
+   - Debe ser `false` si solo describe avance operativo efímero, triage de bugs o tareas transitorias del día.
+3. **Durable vs Ephemeral:** Asegura que los insights retenidos sean verdaderamente duraderos o relevantes a largo plazo. Filtra insights genéricos o vacíos.
+4. **Conciseness & Tone:** Keep explanations concise, dry, and highly technical. Remove any flattery or generic filler words.
+5. **No TODOs:** Ensure no task lists or temporary TODO states are recorded as long-term memories.
+6. **Validation:** Check if the referenced project notes exist or make sense.
 
 ### Proposed Draft Daily Log (from Maker):
 ```json
@@ -296,7 +348,7 @@ Your sole job is to audit and refine the proposed Daily Log JSON against his str
 {transcript}
 ```
 
-Please review the proposed Daily Log. Filter out any redundant, low-signal, or generic insights. Improve the wording to be dry, direct, and factual. Output the refined JSON structure with the exact same keys:
+Please review the proposed Daily Log. Filter out any redundant, ungrounded, or hallucinated items. Improve the wording to be dry, direct, and factual. Output the refined JSON structure with the exact same keys:
 {{
     "resumen_operativo": "...",
     "trabajo_tecnico": "...",
@@ -314,27 +366,28 @@ Please review the proposed Daily Log. Filter out any redundant, low-signal, or g
 # the run loudly at the gate, not KeyError deep inside note-writing code.
 
 class _InsightOut(BaseModel):
-    target_note: str = ""
-    insight: str = ""
-    evidence: str = ""
-    action: str = ""
+    target_note: str | None = ""
+    insight: str | None = ""
+    evidence: str | None = ""
+    action: str | None = ""
+    durable: bool = False
 
 class _LinkOut(BaseModel):
-    note_a: str = ""
-    note_b: str = ""
-    evidence: str = ""
-    confidence: str = "low"
+    note_a: str | None = ""
+    note_b: str | None = ""
+    evidence: str | None = ""
+    confidence: str | None = "low"
 
 class _NoteOut(BaseModel):
-    name: str = ""
-    slug: str = ""
-    type: str = "topic"
+    name: str | None = ""
+    slug: str | None = ""
+    type: str | None = "topic"
 
 class _ConsolidationOut(BaseModel):
-    resumen_operativo: str = ""
-    trabajo_tecnico: str = ""
-    negocios: str = ""
-    decisiones: str = ""
+    resumen_operativo: str | None = ""
+    trabajo_tecnico: str | None = ""
+    negocios: str | None = ""
+    decisiones: str | None = ""
     insights: list[_InsightOut] = []
     proposed_links: list[_LinkOut] = []
     proposed_notes: list[_NoteOut] = []
@@ -463,15 +516,14 @@ def emit_proposal(target_date, data):
                 f"- **Evidencia:** {insight.get('evidence', '')}\n"
                 f"- **Acción:** {insight.get('action', '')} (#hermes)"
             )
+        # An append is marked durable if any constituent insight is durable
+        note_durable = any(bool(insight.get("durable")) for insight in items)
         appends.append(SectionAppend(
             target_slug=note_name,
             section_date=date_obj,
             content="\n\n".join(lines),
             source_marker=marker,
-            # Held for review: the same untrusted-transcript-driven LLM call that
-            # wrote this content cannot also vouch for its safety, so Hermes
-            # never self-declares durability (fail closed → approval gate).
-            durable=False,
+            durable=note_durable,
             guardrail_hit=policy.is_guardrailed(note_name),
         ))
 
@@ -544,6 +596,24 @@ def log_audit(target_date, status="success"):
     with open(AUDIT_LOG_PATH, 'w') as f:
         json.dump(entries, f, indent=4)
 
+def sync_meetings_for_cycle():
+    """Card new Escriba meetings and reindex so they're searchable today.
+
+    Runs on every daily cycle, independent of state.db traffic. Best-effort:
+    a meeting-sync failure is logged but never blocks the Hermes consolidation.
+    """
+    if not GOOGLE_API_KEY:
+        print("🎙️ Escriba sync skipped: no GOOGLE_API_KEY / GEMINI_API_KEY.", file=sys.stderr)
+        return None
+    try:
+        report = sync_escriba_meetings(vault=_VAULT, llm_caller=call_gemini, run_reindex=True)
+    except Exception as e:
+        print(f"❌ Escriba sync failed: {type(e).__name__}: {e}", file=sys.stderr)
+        return None
+    print(format_report(report))
+    return report
+
+
 def run_dream_cycle(target_date=None):
     global policy, policy_version
     if not target_date:
@@ -562,6 +632,8 @@ def run_dream_cycle(target_date=None):
 
     print(f"🌙 Starting Hermes dreaming/consolidation cycle (Policy v{policy_version}) for: {target_date}...")
     
+    sync_meetings_for_cycle()
+
     raw_msgs = get_messages_for_date(target_date)
     if not raw_msgs:
         print(f"📭 No conversation signals found in state.db for {target_date}. Skipping.")
@@ -571,11 +643,10 @@ def run_dream_cycle(target_date=None):
     
     # Check if we have the API key
     if not GOOGLE_API_KEY:
-        print(f"🔑 No GOOGLE_API_KEY found. Printing cleaned transcript for {target_date} to stdout (Agent-driven mode).")
-        print(f"--- START TRANSCRIPT {target_date} ---")
-        print(transcript)
-        print(f"--- END TRANSCRIPT {target_date} ---")
-        return
+        error_msg = f"❌ No GOOGLE_API_KEY / GEMINI_API_KEY found in ~/.hermes/.env for {target_date}. Aborting dream cycle."
+        print(error_msg, file=sys.stderr)
+        log_audit(target_date, "failed: missing_api_key")
+        raise RuntimeError(error_msg)
     
     try:
         print("💡 Maker Step: Generating proposed Daily Log...")

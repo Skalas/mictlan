@@ -20,8 +20,14 @@ VAULT = pathlib.Path(os.environ.get("MICTLAN_VAULT", DEFAULT_VAULT))
 DEFAULT_BRAIN_MCP = os.path.expanduser("~/github/skalas/brain-mcp")
 BRAIN_MCP_DIR = pathlib.Path(os.environ.get("MICTLAN_BRAIN_MCP", DEFAULT_BRAIN_MCP))
 
+# Escriba (meeting recorder) exports one markdown file per session here; the
+# vault only keeps lightweight meeting cards pointing back at these files.
+DEFAULT_ESCRIBA_EXPORT_DIR = os.path.expanduser("~/Documents/Escriba")
+ESCRIBA_EXPORT_DIR = pathlib.Path(os.environ.get("ESCRIBA_EXPORT_DIR", DEFAULT_ESCRIBA_EXPORT_DIR))
+
 NOTES = VAULT / "notes"
 CONVERSATIONS = VAULT / "conversations"
+MEETINGS = VAULT / "meetings"
 
 # Shelf folders: catalog notes (kind: book/recipe/task/delegated_task) live here,
 # outside the concept graph's notes/ home but still indexed and link-resolvable.
